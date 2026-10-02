@@ -1,5 +1,5 @@
 
-const CACHE="danang-hoian-planner-v3";
+const CACHE="danang-hoian-planner-v4";
 const ASSETS=["./","./index.html","./styles.css","./app.js","./manifest.json","./firebase-config.js"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
