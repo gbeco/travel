@@ -1,0 +1,9 @@
+{
+  "name": "다낭·호이안 36박 37일 여행 플래너",
+  "short_name": "다낭호이안",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f4ee",
+  "theme_color": "#24443f",
+  "lang": "ko"
+}
