@@ -99,7 +99,8 @@ const DEFAULT_STATE = {
   krwRate: 0.0524,
   checklist: ["여권","여행자보험","아기 분유","이유식","기저귀","물티슈","상비약","충전기","유모차/아기띠"],
   checked: {},
-  weather: { fetchedAt:null, cities:{} }
+  weather: { fetchedAt:null, cities:{} },
+  _meta: { updatedAt: 0 }
 };
 
 let state = loadState();
@@ -122,7 +123,271 @@ function deepMerge(base, saved){
   });
   return base;
 }
-function save(){ localStorage.setItem("vnTripPlannerV2", JSON.stringify(state)); }
+function persistLocal(){
+  localStorage.setItem("vnTripPlannerV2", JSON.stringify(state));
+}
+function save(){
+  state._meta = state._meta || {};
+  state._meta.updatedAt = Date.now();
+  persistLocal();
+  scheduleCloudWrite();
+}
+
+
+const cloud = {
+  configured: false,
+  loading: true,
+  user: null,
+  auth: null,
+  db: null,
+  docRef: null,
+  sdk: null,
+  unsubscribe: null,
+  writeTimer: null,
+  status: "Firebase 확인 중",
+  lastSyncedAt: null,
+  error: null
+};
+
+function isFirebaseConfigured(config){
+  if(!config || typeof config !== "object") return false;
+  const required = ["apiKey","authDomain","projectId","appId"];
+  return required.every(k => config[k] && !String(config[k]).includes("YOUR_"));
+}
+
+function cloudStatusLabel(){
+  if(cloud.loading) return "☁️ Firebase 확인 중";
+  if(!cloud.configured) return "💾 이 기기에 저장";
+  if(cloud.error) return "⚠️ 동기화 오류";
+  if(!cloud.user) return "💾 로그인 전 · 로컬";
+  if(cloud.status === "syncing") return "☁️ 동기화 중…";
+  if(cloud.status === "synced") return "☁️ Firebase 동기화됨";
+  return "☁️ Firebase 연결됨";
+}
+
+function updateCloudHeader(){
+  const statusBtn = document.getElementById("cloudStatusBtn");
+  const authBtn = document.getElementById("authBtn");
+  if(statusBtn) statusBtn.textContent = cloudStatusLabel();
+  if(authBtn){
+    if(!cloud.configured){
+      authBtn.textContent = "Firebase 설정";
+    }else if(cloud.user){
+      authBtn.textContent = "로그아웃";
+      authBtn.title = cloud.user.email || cloud.user.displayName || "";
+    }else{
+      authBtn.textContent = "Google 로그인";
+      authBtn.title = "";
+    }
+  }
+}
+
+function applyRemoteState(remoteState, remoteUpdatedAt){
+  if(!remoteState) return;
+  state = deepMerge(clone(DEFAULT_STATE), remoteState);
+  state._meta = state._meta || {};
+  state._meta.updatedAt = Number(remoteUpdatedAt || state._meta.updatedAt || 0);
+  persistLocal();
+  cloud.status = "synced";
+  cloud.lastSyncedAt = Date.now();
+  cloud.error = null;
+  updateCloudHeader();
+  render();
+}
+
+async function pushCloudState(){
+  if(!cloud.configured || !cloud.user || !cloud.docRef || !cloud.sdk) return;
+  cloud.status = "syncing";
+  cloud.error = null;
+  updateCloudHeader();
+  try{
+    const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
+    await cloud.sdk.setDoc(cloud.docRef, {
+      schemaVersion: 3,
+      state: state,
+      updatedAtClient,
+      updatedAt: cloud.sdk.serverTimestamp()
+    });
+    cloud.status = "synced";
+    cloud.lastSyncedAt = Date.now();
+  }catch(err){
+    console.error("Firebase sync write failed", err);
+    cloud.status = "error";
+    cloud.error = err;
+  }
+  updateCloudHeader();
+}
+
+function scheduleCloudWrite(){
+  if(!cloud.configured || !cloud.user || !cloud.docRef) return;
+  clearTimeout(cloud.writeTimer);
+  cloud.writeTimer = setTimeout(pushCloudState, 700);
+}
+
+async function connectSignedInUser(user){
+  cloud.user = user;
+  cloud.error = null;
+  updateCloudHeader();
+
+  if(cloud.unsubscribe){
+    cloud.unsubscribe();
+    cloud.unsubscribe = null;
+  }
+
+  const { doc, getDoc, onSnapshot } = cloud.sdk;
+  cloud.docRef = doc(cloud.db, "users", user.uid, "tripData", "current");
+
+  try{
+    const snap = await getDoc(cloud.docRef);
+    const localUpdatedAt = Number(state._meta?.updatedAt || 0);
+
+    if(snap.exists()){
+      const remote = snap.data();
+      const remoteUpdatedAt = Number(remote.updatedAtClient || 0);
+      if(remoteUpdatedAt > localUpdatedAt){
+        applyRemoteState(remote.state, remoteUpdatedAt);
+      }else{
+        await pushCloudState();
+      }
+    }else{
+      await pushCloudState();
+    }
+
+    cloud.unsubscribe = onSnapshot(
+      cloud.docRef,
+      { includeMetadataChanges: true },
+      snap2 => {
+        if(!snap2.exists() || snap2.metadata.hasPendingWrites) return;
+        const remote = snap2.data();
+        const remoteUpdatedAt = Number(remote.updatedAtClient || 0);
+        const localUpdatedAt = Number(state._meta?.updatedAt || 0);
+        if(remoteUpdatedAt > localUpdatedAt){
+          applyRemoteState(remote.state, remoteUpdatedAt);
+        }else{
+          cloud.status = "synced";
+          cloud.lastSyncedAt = Date.now();
+          updateCloudHeader();
+        }
+      },
+      err => {
+        console.error("Firebase snapshot failed", err);
+        cloud.error = err;
+        cloud.status = "error";
+        updateCloudHeader();
+      }
+    );
+  }catch(err){
+    console.error("Firebase initial sync failed", err);
+    cloud.error = err;
+    cloud.status = "error";
+    updateCloudHeader();
+  }
+}
+
+async function initFirebaseSync(){
+  try{
+    const configModule = await import("./firebase-config.js");
+    const config = configModule.firebaseConfig;
+    cloud.configured = isFirebaseConfigured(config);
+    cloud.loading = false;
+    updateCloudHeader();
+
+    if(!cloud.configured) return;
+
+    const VERSION = "12.19.0";
+    const [appMod, authMod, firestoreMod] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-auth.js`),
+      import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-firestore.js`)
+    ]);
+
+    const firebaseApp = appMod.initializeApp(config);
+    cloud.auth = authMod.getAuth(firebaseApp);
+    cloud.db = firestoreMod.getFirestore(firebaseApp);
+    cloud.sdk = {
+      GoogleAuthProvider: authMod.GoogleAuthProvider,
+      signInWithPopup: authMod.signInWithPopup,
+      signOut: authMod.signOut,
+      doc: firestoreMod.doc,
+      getDoc: firestoreMod.getDoc,
+      setDoc: firestoreMod.setDoc,
+      onSnapshot: firestoreMod.onSnapshot,
+      serverTimestamp: firestoreMod.serverTimestamp
+    };
+
+    authMod.onAuthStateChanged(cloud.auth, user => {
+      if(user){
+        connectSignedInUser(user);
+      }else{
+        if(cloud.unsubscribe){
+          cloud.unsubscribe();
+          cloud.unsubscribe = null;
+        }
+        cloud.user = null;
+        cloud.docRef = null;
+        cloud.status = "local";
+        cloud.error = null;
+        updateCloudHeader();
+        if(activeView === "more") renderMore();
+      }
+    });
+  }catch(err){
+    console.error("Firebase initialization failed", err);
+    cloud.loading = false;
+    cloud.error = err;
+    updateCloudHeader();
+  }
+}
+
+function isMobileBrowser(){
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+async function toggleFirebaseAuth(){
+  if(!cloud.configured){
+    openFirebaseSetupModal();
+    return;
+  }
+  if(!cloud.auth || !cloud.sdk){
+    alert("Firebase SDK를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
+    return;
+  }
+
+  if(cloud.user){
+    try{
+      await cloud.sdk.signOut(cloud.auth);
+    }catch(err){
+      alert("로그아웃하지 못했습니다.");
+    }
+    return;
+  }
+
+  const provider = new cloud.sdk.GoogleAuthProvider();
+  try{
+    // GitHub Pages is not Firebase Hosting. Popup avoids redirect auth problems
+    // caused by third-party storage restrictions in modern Safari/Firefox/Chrome.
+    await cloud.sdk.signInWithPopup(cloud.auth, provider);
+  }catch(err){
+    console.error("Google sign-in failed", err);
+    alert("Google 로그인에 실패했습니다. Firebase Authentication의 Google 제공자와 GitHub Pages 도메인 등록을 확인해주세요.");
+  }
+}
+
+function openFirebaseSetupModal(){
+  showModal(`
+    <div class="modal-head">
+      <div><div class="eyebrow">FIREBASE</div><h2>클라우드 동기화 설정</h2></div>
+      <button class="btn small" data-close-modal>닫기</button>
+    </div>
+    <div class="stack">
+      <div class="item"><div class="item-title">1. Firebase 프로젝트와 Web App 생성</div><div class="item-meta">Firebase Console에서 Web App을 등록하고 firebaseConfig 값을 복사합니다.</div></div>
+      <div class="item"><div class="item-title">2. firebase-config.js 수정</div><div class="item-meta">프로젝트 루트의 firebase-config.js에 받은 설정값을 넣습니다.</div></div>
+      <div class="item"><div class="item-title">3. Google 로그인 활성화</div><div class="item-meta">Authentication → Sign-in method에서 Google을 켜고, Authorized domains에 GitHub Pages 도메인을 추가합니다.</div></div>
+      <div class="item"><div class="item-title">4. Firestore와 보안 규칙 설정</div><div class="item-meta">Firestore Database를 만든 뒤 이 프로젝트의 firestore.rules 내용을 Rules 탭에 적용합니다.</div></div>
+    </div>
+    <div class="note" style="margin-top:14px">상세 과정은 FIREBASE_SETUP.md에 정리해 두었습니다.</div>
+  `);
+}
 
 function parseDate(s){ return new Date(s+"T00:00:00"); }
 function iso(d){ return new Date(d).toISOString().slice(0,10); }
@@ -657,10 +922,17 @@ function renderMore(){
           </div>
         </div>
         <div class="card">
-          <div class="card-head"><h3>💾 데이터</h3></div>
-          <p class="small muted">이 앱은 서버가 없어 기기별로 데이터가 저장됩니다. 휴대폰과 PC 사이에서 옮길 때 JSON 백업/복원을 사용하세요.</p>
+          <div class="card-head"><h3>☁️ Firebase 동기화</h3><span class="badge ${cloud.user?"good":""}">${escapeHtml(cloudStatusLabel())}</span></div>
+          <p class="small muted">${
+            cloud.user
+              ? `${escapeHtml(cloud.user.email || cloud.user.displayName || "Google 계정")}으로 로그인되어 있습니다. Mac과 iPhone에서 같은 Google 계정으로 로그인하면 가장 최근 수정본이 자동 동기화됩니다.`
+              : cloud.configured
+                ? "Firebase 설정은 완료되었습니다. Google 로그인 후 클라우드 동기화를 시작할 수 있습니다."
+                : "현재는 이 기기의 localStorage에 저장됩니다. firebase-config.js를 설정하면 Google 계정 기반 자동 동기화를 사용할 수 있습니다."
+          }</p>
           <div class="row wrap">
-            <button class="btn primary" data-action="export-data">JSON 백업</button>
+            <button class="btn primary" id="moreAuthBtn">${cloud.user?"Google 로그아웃":cloud.configured?"Google 로그인":"Firebase 설정 방법"}</button>
+            <button class="btn" data-action="export-data">JSON 백업</button>
             <button class="btn" data-action="import-data">JSON 복원</button>
             <button class="btn danger" id="resetBtn">초기화</button>
           </div>
@@ -677,6 +949,7 @@ function renderMore(){
     showModal(`<div class="modal-head"><h2>준비물 추가</h2><button class="btn small" data-close-modal>닫기</button></div><label class="field">항목<input id="newCheck"></label><div class="modal-footer"><button class="btn primary" id="saveCheck">추가</button></div>`);
     document.getElementById("saveCheck").onclick=()=>{const v=document.getElementById("newCheck").value.trim();if(v){state.checklist.push(v);save();closeModal();renderMore();}};
   };
+  document.getElementById("moreAuthBtn").onclick=toggleFirebaseAuth;
   document.getElementById("resetBtn").onclick=()=>{if(confirm("사용자 데이터를 모두 초기화할까요?")){state=clone(DEFAULT_STATE);save();render();}};
   bindDataActions();
 }
@@ -722,7 +995,7 @@ async function refreshWeather(){
 }
 
 function exportData(){
-  const payload={version:2,exportedAt:new Date().toISOString(),trip:TRIP,state};
+  const payload={version:3,exportedAt:new Date().toISOString(),trip:TRIP,state};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -750,9 +1023,24 @@ function escapeHtml(v){
 function attr(v){ return escapeHtml(v); }
 
 document.getElementById("weatherRefreshBtn").onclick=refreshWeather;
+document.getElementById("authBtn").onclick=toggleFirebaseAuth;
+document.getElementById("cloudStatusBtn").onclick=()=>{
+  if(cloud.error){
+    alert("Firebase 동기화 오류가 있습니다. 인터넷 연결, Authentication, Firestore Rules 설정을 확인해주세요.");
+  }else if(!cloud.configured){
+    openFirebaseSetupModal();
+  }else if(cloud.user){
+    const who=cloud.user.email || cloud.user.displayName || "Google 계정";
+    alert(`${who}\nFirebase 자동 동기화가 활성화되어 있습니다.`);
+  }else{
+    alert("Firebase는 설정되어 있지만 아직 Google 로그인 전입니다.");
+  }
+};
 document.querySelectorAll("[data-action='export-data']").forEach(b=>b.onclick=exportData);
 
 render();
+updateCloudHeader();
+initFirebaseSync();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));

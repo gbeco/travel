@@ -30,15 +30,18 @@
 
 이 앱은 별도 빌드 과정이 없는 HTML/CSS/JavaScript 정적 사이트이므로 위 방식으로 배포할 수 있습니다.
 
-## 데이터 저장에 대한 중요한 점
+## 데이터 저장과 Firebase 동기화
 
-사용자가 입력하는 일정, 지출, 예약, 체크리스트는 브라우저 `localStorage`에 저장됩니다.
+기본 상태에서는 일정, 지출, 예약, 체크리스트가 브라우저 `localStorage`에 저장됩니다.
 
-따라서:
-- GitHub에 코드가 있어도 여행 데이터가 GitHub에 자동 저장되는 것은 아닙니다.
-- PC와 휴대폰의 데이터는 자동 동기화되지 않습니다.
-- **준비 → 데이터 → JSON 백업/복원**을 이용하면 기기 간 데이터를 옮길 수 있습니다.
-- 브라우저 데이터를 삭제하면 여행 데이터도 지워질 수 있으므로 주기적으로 백업하세요.
+`firebase-config.js`를 설정하고 Google 로그인하면:
+- Cloud Firestore에 사용자별 여행 데이터가 저장됩니다.
+- Mac / iPhone / PC에서 **같은 Google 계정**으로 로그인하면 자동 동기화됩니다.
+- Firestore Security Rules는 사용자 본인의 UID 아래 데이터만 접근하도록 제한합니다.
+- Firebase 연결이 끊겨도 로컬 저장은 계속 사용할 수 있습니다.
+- JSON 백업/복원도 계속 지원합니다.
+
+설정 방법은 **`FIREBASE_SETUP.md`**를 참고하세요.
 
 ## 날씨
 
@@ -52,6 +55,9 @@
 ├── index.html
 ├── styles.css
 ├── app.js
+├── firebase-config.js
+├── firestore.rules
+├── FIREBASE_SETUP.md
 ├── manifest.json
 ├── sw.js
 ├── .nojekyll
