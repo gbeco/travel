@@ -6,15 +6,14 @@
 //
 // 아직 Firebase를 연결하지 않았다면 null 상태로 두어도 앱은 localStorage 모드로 정상 동작합니다.
 
-export const firebaseConfig = null;
+// export const firebaseConfig = null;
 
-/*
+
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyBh4ZfAs777Ae3nJvTg3mv2fxGh6bdm_5U",
+    authDomain: "travel-d3221.firebaseapp.com",
+    projectId: "travel-d3221",
+    storageBucket: "travel-d3221.firebasestorage.app",
+    messagingSenderId: "110479240080",
+    appId: "1:110479240080:web:b446d4d756cbfde39aa115"
 };
-*/
