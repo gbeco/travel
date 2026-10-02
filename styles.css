@@ -187,8 +187,21 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   .sidebar{display:none}
   .main{padding:20px 13px 90px}
   .top-header{display:grid}
-  .top-actions{width:100%}
-  .top-actions .btn{flex:1}
+  .top-actions{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(2,max-content);
+    justify-content:start;
+    gap:5px;
+  }
+  .top-actions .btn{
+    flex:0 0 auto;
+    padding:5px 7px;
+    border-radius:8px;
+    font-size:10px;
+    line-height:1.2;
+    min-height:0;
+  }
   h1{font-size:25px}
   .grid-4,.grid-3,.grid-2,.place-grid,.form-grid{grid-template-columns:1fr}
   .locked-row{grid-template-columns:1fr}
