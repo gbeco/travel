@@ -9,11 +9,11 @@ const TRIP = {
     { id:"flight-in", type:"귀국", date:"2026-12-21", flight:"KE460", route:"다낭 → 인천공항", time:"23:00 → 05:20(+1)" }
   ],
   stays: [
-    { id:"stay-1", name:"실크 센스 호이안 리버 리조트", city:"호이안", in:"2026-11-16", out:"2026-11-23" },
-    { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-23", out:"2026-11-30" },
-    { id:"stay-3", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07" },
-    { id:"stay-4", name:"Risemount Premier Resort Da Nang", city:"다낭", in:"2026-12-07", out:"2026-12-14" },
-    { id:"stay-5", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21" }
+    { id:"stay-1", name:"실크 센스 호이안 리버 리조트", city:"호이안", in:"2026-11-16", out:"2026-11-23", mapQuery:"Silk Sense Hoi An River Resort" },
+    { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-23", out:"2026-11-30", mapQuery:"Eco & Rustic Home Hoian" },
+    { id:"stay-3", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07", mapQuery:"Vernal Hotel & Apartment Da Nang" },
+    { id:"stay-4", name:"Risemount Premier Resort Da Nang", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"Risemount Premier Resort Da Nang" },
+    { id:"stay-5", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21", mapQuery:"Tam House Villa Hotel Da Nang" }
   ],
   cities: {
     "호이안": { lat:15.8801, lon:108.3380 },
@@ -409,6 +409,21 @@ function currentStay(date){
 function cityForDate(date){
   return currentStay(date)?.city || (date==="2026-12-22" ? "한국" : "다낭");
 }
+function stayMapUrl(stay){
+  const q = stay.mapQuery || `${stay.name} ${stay.city} Vietnam`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+}
+function stayLink(stay, extraClass=""){
+  return `<a class="stay-map-link ${extraClass}" href="${stayMapUrl(stay)}" target="_blank" rel="noopener noreferrer" title="Google Maps에서 ${attr(stay.name)} 열기">${escapeHtml(stay.name)}</a>`;
+}
+function renderWithStayLinks(text){
+  let html = escapeHtml(text);
+  TRIP.stays.forEach(stay=>{
+    const safeName = escapeHtml(stay.name);
+    html = html.split(safeName).join(stayLink(stay));
+  });
+  return html;
+}
 function lockedEvents(date){
   const events=[];
   TRIP.flights.filter(f=>f.date===date).forEach(f=>events.push(`✈ ${f.flight} · ${f.time}`));
@@ -512,8 +527,8 @@ function renderHome(){
           ${planOptionHTML(d,"C",p.c,p.selected)}
         </div>
         <div class="row wrap" style="margin-top:14px">
-          ${stay ? `<span class="badge good">🏨 ${stay.name}</span>`:""}
-          ${lockedEvents(d).map(e=>`<span class="badge good">${escapeHtml(e)}</span>`).join("")}
+          ${stay ? `<span class="badge good">🏨 ${stayLink(stay)}</span>`:""}
+          ${lockedEvents(d).map(e=>`<span class="badge good">${renderWithStayLinks(e)}</span>`).join("")}
         </div>
       </div>
 
@@ -533,7 +548,7 @@ function renderHome(){
       <div class="card">
         <div class="card-head"><h3>다음 고정 일정</h3></div>
         <div class="stack">
-          ${nextLockedEvents().slice(0,5).map(x=>`<div class="item"><div class="item-title">${x.event}</div><div class="item-meta">${fmtDate(x.date,true)}</div></div>`).join("") || `<div class="muted small">남은 고정 일정이 없습니다.</div>`}
+          ${nextLockedEvents().slice(0,5).map(x=>`<div class="item"><div class="item-title">${renderWithStayLinks(x.event)}</div><div class="item-meta">${fmtDate(x.date,true)}</div></div>`).join("") || `<div class="muted small">남은 고정 일정이 없습니다.</div>`}
         </div>
       </div>
     </div>
@@ -563,7 +578,7 @@ function planOptionHTML(date,label,text,selected){
 function stayRow(s){
   return `<div class="locked-row">
     <div><strong>${fmtDate(s.in)}–${fmtDate(s.out)}</strong><div class="small muted">${s.city}</div></div>
-    <div><strong>${escapeHtml(s.name)}</strong></div>
+    <div><strong>${stayLink(s)}</strong></div>
     <span class="lock-badge">🔒 LOCKED</span>
   </div>`;
 }
@@ -605,8 +620,8 @@ function monthCalendar(month,title){
     const plan=selectedPlan(d), stay=currentStay(d), w=weatherFor(d);
     cells.push(`<div class="day" data-drop-date="${d}">
       <div class="row between"><div class="day-date">${day}</div><span class="tiny">${fmtDate(d).split(" ").pop()}</span></div>
-      <div class="day-city">${stay?`${stay.city} · ${stay.name}`:cityForDate(d)}</div>
-      ${lockedEvents(d).map(e=>`<div class="event locked">${escapeHtml(e)}</div>`).join("")}
+      <div class="day-city">${stay?`${escapeHtml(stay.city)} · ${stayLink(stay)}`:escapeHtml(cityForDate(d))}</div>
+      ${lockedEvents(d).map(e=>`<div class="event locked">${renderWithStayLinks(e)}</div>`).join("")}
       ${w?`<div class="event weather">${weatherEmoji(w.code)} ${w.min}–${w.max}℃ · ${w.rain}%</div>`:""}
       ${plan?`<div class="event editable" draggable="true" data-drag-date="${d}">✎ ${escapeHtml(plan)}</div>`:""}
       <div class="day-actions"><button data-edit-day="${d}">${plan?"일정 수정":"+ 일정 추가"}</button></div>
@@ -652,7 +667,7 @@ function openDayModal(date){
       <div><div class="eyebrow">${fmtDate(date,true)} · ${cityForDate(date)}</div><h2>하루 일정 편집</h2></div>
       <button class="btn small" data-close-modal>닫기</button>
     </div>
-    ${lockedEvents(date).length?`<div class="note">🔒 ${lockedEvents(date).map(escapeHtml).join(" · ")} — 고정 일정은 변경되지 않습니다.</div>`:""}
+    ${lockedEvents(date).length?`<div class="note">🔒 ${lockedEvents(date).map(renderWithStayLinks).join(" · ")} — 고정 일정은 변경되지 않습니다.</div>`:""}
     ${w?`<div class="item" style="margin-top:12px"><div class="item-title">${weatherEmoji(w.code)} 예상 ${w.min}–${w.max}℃</div><div class="item-meta">최대 강수확률 ${w.rain}% · 최근 조회 예보</div></div>`:""}
     <div class="form-grid" style="margin-top:14px">
       <label class="field">선택할 운영안
@@ -787,7 +802,7 @@ function renderBookings(){
       </div>
       <div class="card">
         <div class="card-head"><h3>🏨 숙소</h3><span class="lock-badge">🔒 고정</span></div>
-        <div class="stack">${TRIP.stays.map(s=>`<div class="item"><div class="item-title">${escapeHtml(s.name)}</div><div class="item-meta">${s.city} · ${s.in} → ${s.out}</div></div>`).join("")}</div>
+        <div class="stack">${TRIP.stays.map(s=>`<div class="item"><div class="item-title">${stayLink(s)}</div><div class="item-meta">${escapeHtml(s.city)} · ${s.in} → ${s.out}</div></div>`).join("")}</div>
       </div>
     </div>
     <div class="section card">
