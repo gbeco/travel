@@ -12,7 +12,7 @@ const TRIP = {
     { id:"stay-1", name:"실크 센스 호이안 리버 리조트", city:"호이안", in:"2026-11-16", out:"2026-11-23", mapQuery:"Silk Sense Hoi An River Resort" },
     { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-23", out:"2026-11-30", mapQuery:"Eco & Rustic Home Hoian" },
     { id:"stay-3", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07", mapQuery:"Vernal Hotel & Apartment Da Nang" },
-    { id:"stay-4", name:"Risemount Premier Resort Da Nang", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"Risemount Premier Resort Da Nang" },
+    { id:"stay-4", name:"TA Boutique Hotel", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"TA Boutique Hotel Da Nang" },
     { id:"stay-5", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21", mapQuery:"Tam House Villa Hotel Da Nang" }
   ],
   cities: {
@@ -52,7 +52,7 @@ const DEFAULT_DAY_PLANS = {
 "2026-12-04":{a:"손짜반도 · 영응사",b:"영응사까지만",c:"시내 일정으로 교체",selected:"A"},
 "2026-12-05":{a:"오후 휴식 → 용다리 후보",b:"저녁 식사 + 용다리",c:"호텔",selected:"B"},
 "2026-12-06":{a:"자유 · 마사지",b:"카페",c:"완전 휴식",selected:"A"},
-"2026-12-07":{a:"Risemount 이동 · 리조트 휴식",b:"체크인 후 주변 산책",c:"완전 휴식",selected:"A"},
+"2026-12-07":{a:"호텔 이동 · 휴식",b:"체크인 후 주변 산책",c:"완전 휴식",selected:"A"},
 "2026-12-08":{a:"리조트 · 수영 · 해변",b:"주변 카페",c:"객실 휴식",selected:"A"},
 "2026-12-09":{a:"바나힐 — 날씨 좋을 때 실행",b:"미케비치 · 카페",c:"실내 · 카페 · 쇼핑",selected:"A"},
 "2026-12-10":{a:"바나힐 다음날 완전 휴식",b:"근처 산책",c:"완전 휴식",selected:"A"},
