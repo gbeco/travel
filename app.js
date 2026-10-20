@@ -1,4 +1,3 @@
-
 "use strict";
 
 const TRIP = {
@@ -13,9 +12,11 @@ const TRIP = {
     { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-20", out:"2026-11-27", mapQuery:"Eco & Rustic Home Hoian" },
     { id:"stay-3", name:"Angel Garden Villa", city:"다낭", in:"2026-11-27", out:"2026-11-30", mapQuery:"Angel Garden Villa Hoian" },
     { id:"stay-4", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07", mapQuery:"Vernal Hotel & Apartment Da Nang" },
-    // { id:"stay-4-1", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-29", out:"2026-12-03", mapQuery:"Vernal Hotel & Apartment Da Nang" },
     { id:"stay-5", name:"TA Boutique Hotel", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"TA Boutique Hotel Da Nang" },
     { id:"stay-6", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21", mapQuery:"Tam House Villa Hotel Da Nang" }
+  ],
+  companions: [
+    { id:"family-inlaws", label:"장인·장모님", stayId:"stay-4", in:"2026-11-29", out:"2026-12-03" }
   ],
   cities: {
     "호이안": { lat:15.8801, lon:108.3380 },
@@ -37,25 +38,25 @@ const DEFAULT_DAY_PLANS = {
 "2026-11-17":{a:"리조트 적응 · 수영 · 산책 · 장보기",b:"근처 카페만 가볍게",c:"객실 휴식",selected:"A"},
 "2026-11-18":{a:"오후 호이안 올드타운 · 저녁 · 야경",b:"이른 저녁만 올드타운",c:"카페 또는 배달",selected:"A"},
 "2026-11-19":{a:"리조트 + 카페",b:"짧은 산책",c:"완전 휴식",selected:"B"},
-"2026-11-20":{a:"안방비치 · 점심 · 카페",b:"해변 카페만",c:"마사지 · 카페",selected:"A"},
+"2026-11-20":{a:"실크 센스 체크아웃 → Eco & Rustic 체크인 · 숙소 적응",b:"숙소 이동 후 근처 식사",c:"체크인 후 휴식",selected:"A"},
 "2026-11-21":{a:"올드타운 재방문 · 시장 · 저녁",b:"저녁 식사만 외출",c:"숙소 휴식",selected:"B"},
 "2026-11-22":{a:"휴식 · 빨래 · 장보기",b:"동일",c:"동일",selected:"A"},
-"2026-11-23":{a:"숙소 이동 · 장보기 · 휴식",b:"체크인 후 카페",c:"숙소 휴식",selected:"A"},
+"2026-11-23":{a:"Eco & Rustic 생활일 · 장보기 · 카페",b:"점심 외출",c:"숙소 휴식",selected:"A"},
 "2026-11-24":{a:"현지생활 · 마트 · 카페",b:"점심 외출",c:"완전 휴식",selected:"A"},
 "2026-11-25":{a:"짜꾸에 채소마을",b:"논길 드라이브 · 점심",c:"카페 · 올드타운 실내",selected:"A"},
 "2026-11-26":{a:"올드타운 카페 · 식사",b:"마사지",c:"완전 휴식",selected:"B"},
-"2026-11-27":{a:"깜탄 코코넛마을",b:"짧은 보트 체험",c:"비 오면 취소",selected:"A"},
+"2026-11-27":{a:"Eco & Rustic 체크아웃 → Angel Garden Villa 체크인",b:"숙소 이동 후 주변 산책",c:"체크인 후 휴식",selected:"A"},
 "2026-11-28":{a:"안방비치 재방문",b:"호이안 시내",c:"카페",selected:"B"},
-"2026-11-29":{a:"호이안 마지막 휴식 · 선물 쇼핑",b:"숙소 주변만",c:"완전 휴식",selected:"A"},
-"2026-11-30":{a:"호이안 → 다낭 이동 · 체크인",b:"체크인 · 장보기",c:"숙소 휴식",selected:"A"},
+"2026-11-29":{a:"Angel Garden Villa 휴식 · 장인·장모님 Vernal 체크인",b:"장인·장모님과 저녁 합류",c:"각 숙소에서 휴식",selected:"A"},
+"2026-11-30":{a:"Angel Garden Villa 체크아웃 → Vernal 체크인 · 장인·장모님 합류",b:"Vernal 체크인 · 함께 저녁",c:"체크인 후 휴식",selected:"A"},
 "2026-12-01":{a:"미케비치 · 생활권 탐색",b:"카페",c:"완전 휴식",selected:"A"},
 "2026-12-02":{a:"한시장 · 다낭 시내 · 한강",b:"시내 점심만",c:"쇼핑몰",selected:"A"},
-"2026-12-03":{a:"참 조각 박물관 · 카페",b:"쇼핑 · 카페",c:"완전 휴식",selected:"A"},
+"2026-12-03":{a:"장인·장모님 Vernal 체크아웃 · 참 조각 박물관 · 카페",b:"함께 점심 후 배웅 · 쇼핑",c:"배웅 후 휴식",selected:"A"},
 "2026-12-04":{a:"손짜반도 · 영응사",b:"영응사까지만",c:"시내 일정으로 교체",selected:"A"},
 "2026-12-05":{a:"오후 휴식 → 용다리 후보",b:"저녁 식사 + 용다리",c:"호텔",selected:"B"},
 "2026-12-06":{a:"자유 · 마사지",b:"카페",c:"완전 휴식",selected:"A"},
-"2026-12-07":{a:"호텔 이동 · 휴식",b:"체크인 후 주변 산책",c:"완전 휴식",selected:"A"},
-"2026-12-08":{a:"리조트 · 수영 · 해변",b:"주변 카페",c:"객실 휴식",selected:"A"},
+"2026-12-07":{a:"Vernal 체크아웃 → TA Boutique Hotel 체크인",b:"체크인 후 주변 산책",c:"체크인 후 휴식",selected:"A"},
+"2026-12-08":{a:"TA Boutique 주변 생활권 탐색 · 미케비치",b:"주변 카페",c:"객실 휴식",selected:"A"},
 "2026-12-09":{a:"바나힐 — 날씨 좋을 때 실행",b:"미케비치 · 카페",c:"실내 · 카페 · 쇼핑",selected:"A"},
 "2026-12-10":{a:"바나힐 다음날 완전 휴식",b:"근처 산책",c:"완전 휴식",selected:"A"},
 "2026-12-11":{a:"오행산",b:"짧은 시내 외출",c:"박물관 · 쇼핑",selected:"A"},
@@ -87,7 +88,7 @@ const DEFAULT_PLACES = [
   {id:"p12",city:"다낭",cat:"아기",name:"Con Cung",priority:"생활",note:"분유·기저귀 등 재고는 방문 전 확인",map:"Con Cung 81 Nguyen Van Linh Da Nang"},
   {id:"p13",city:"다낭",cat:"의료",name:"Vinmec Da Nang Hospital",priority:"긴급",note:"소아 진료 후보",map:"Vinmec Da Nang Hospital"},
   {id:"p14",city:"다낭",cat:"약국",name:"FPT Long Châu",priority:"생활",note:"Nguyen Van Thoai 인근 지점 후보",map:"FPT Long Chau 65 Nguyen Van Thoai Da Nang"},
-  {id:"p15",city:"다낭",cat:"카페",name:"Login Coffee",priority:"○ 시간되면",note:"Risemount 인근 후보",map:"Login Coffee Nguyen Van Thoai Da Nang"}
+  {id:"p15",city:"다낭",cat:"카페",name:"Login Coffee",priority:"○ 시간되면",note:"다낭 카페 후보",map:"Login Coffee Nguyen Van Thoai Da Nang"}
 ];
 
 const DEFAULT_STATE = {
@@ -135,6 +136,38 @@ function save(){
   scheduleCloudWrite();
 }
 
+
+const ITINERARY_MIGRATION_20261020 = {
+  "2026-11-20": { old:{a:"안방비치 · 점심 · 카페",b:"해변 카페만",c:"마사지 · 카페"}, next:{a:"실크 센스 체크아웃 → Eco & Rustic 체크인 · 숙소 적응",b:"숙소 이동 후 근처 식사",c:"체크인 후 휴식"} },
+  "2026-11-23": { old:{a:"숙소 이동 · 장보기 · 휴식",b:"체크인 후 카페",c:"숙소 휴식"}, next:{a:"Eco & Rustic 생활일 · 장보기 · 카페",b:"점심 외출",c:"숙소 휴식"} },
+  "2026-11-27": { old:{a:"깜탄 코코넛마을",b:"짧은 보트 체험",c:"비 오면 취소"}, next:{a:"Eco & Rustic 체크아웃 → Angel Garden Villa 체크인",b:"숙소 이동 후 주변 산책",c:"체크인 후 휴식"} },
+  "2026-11-29": { old:{a:"호이안 마지막 휴식 · 선물 쇼핑",b:"숙소 주변만",c:"완전 휴식"}, next:{a:"Angel Garden Villa 휴식 · 장인·장모님 Vernal 체크인",b:"장인·장모님과 저녁 합류",c:"각 숙소에서 휴식"} },
+  "2026-11-30": { old:{a:"호이안 → 다낭 이동 · 체크인",b:"체크인 · 장보기",c:"숙소 휴식"}, next:{a:"Angel Garden Villa 체크아웃 → Vernal 체크인 · 장인·장모님 합류",b:"Vernal 체크인 · 함께 저녁",c:"체크인 후 휴식"} },
+  "2026-12-03": { old:{a:"참 조각 박물관 · 카페",b:"쇼핑 · 카페",c:"완전 휴식"}, next:{a:"장인·장모님 Vernal 체크아웃 · 참 조각 박물관 · 카페",b:"함께 점심 후 배웅 · 쇼핑",c:"배웅 후 휴식"} },
+  "2026-12-07": { old:{a:"Risemount 이동 · 리조트 휴식",b:"체크인 후 주변 산책",c:"완전 휴식"}, next:{a:"Vernal 체크아웃 → TA Boutique Hotel 체크인",b:"체크인 후 주변 산책",c:"체크인 후 휴식"} },
+  "2026-12-08": { old:{a:"리조트 · 수영 · 해변",b:"주변 카페",c:"객실 휴식"}, next:{a:"TA Boutique 주변 생활권 탐색 · 미케비치",b:"주변 카페",c:"객실 휴식"} }
+};
+function migrateCurrentItinerary(target){
+  target._meta = target._meta || {};
+  if(Number(target._meta.itineraryVersion||0) >= 20261020) return false;
+  target.dayPlans = target.dayPlans || {};
+  let changed=false;
+  Object.entries(ITINERARY_MIGRATION_20261020).forEach(([date,m])=>{
+    if(!target.dayPlans[date]){
+      target.dayPlans[date]=clone(DEFAULT_DAY_PLANS[date]);
+      changed=true;
+      return;
+    }
+    ["a","b","c"].forEach(k=>{
+      if(target.dayPlans[date][k]===m.old[k]){
+        target.dayPlans[date][k]=m.next[k];
+        changed=true;
+      }
+    });
+  });
+  target._meta.itineraryVersion=20261020;
+  return changed;
+}
 
 const cloud = {
   configured: false,
@@ -189,6 +222,7 @@ function applyRemoteState(remoteState, remoteUpdatedAt){
   state = deepMerge(clone(DEFAULT_STATE), remoteState);
   state._meta = state._meta || {};
   state._meta.updatedAt = Number(remoteUpdatedAt || state._meta.updatedAt || 0);
+  migrateCurrentItinerary(state);
   persistLocal();
   cloud.status = "synced";
   cloud.lastSyncedAt = Date.now();
@@ -411,6 +445,20 @@ function currentStay(date){
 function cityForDate(date){
   return currentStay(date)?.city || (date==="2026-12-22" ? "한국" : "다낭");
 }
+function nightsBetween(start,end){
+  return Math.round((parseDate(end)-parseDate(start))/86400000);
+}
+function cityStayStats(city){
+  const stays=TRIP.stays.filter(s=>s.city===city);
+  return {
+    nights:stays.reduce((sum,s)=>sum+nightsBetween(s.in,s.out),0),
+    start:stays.length?stays[0].in:null,
+    end:stays.length?stays[stays.length-1].out:null
+  };
+}
+function companionStay(companion){
+  return TRIP.stays.find(s=>s.id===companion.stayId) || null;
+}
 function stayMapUrl(stay){
   const q = stay.mapQuery || `${stay.name} ${stay.city} Vietnam`;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
@@ -432,6 +480,13 @@ function lockedEvents(date){
   TRIP.stays.forEach(s=>{
     if(s.in===date) events.push(`🔒 체크인 · ${s.name}`);
     if(s.out===date) events.push(`🔒 체크아웃 · ${s.name}`);
+  });
+  (TRIP.companions || []).forEach(c=>{
+    const stay=companionStay(c);
+    const stayName=stay?.name || "동행 숙소";
+    if(c.in===date) events.push(`👪 ${c.label} 체크인 · ${stayName}`);
+    else if(c.out===date) events.push(`👪 ${c.label} 체크아웃 · ${stayName}`);
+    else if(date>c.in && date<c.out) events.push(`👪 ${c.label} 함께 · ${stayName}`);
   });
   return events;
 }
@@ -512,8 +567,8 @@ function renderHome(){
   document.getElementById("view").innerHTML=`
     <div class="grid grid-4">
       ${statCard("여행 기간","37일","11/16 → 12/22")}
-      ${statCard("호이안","14박","11/16 → 11/30")}
-      ${statCard("다낭","21박","11/30 → 12/21")}
+      ${(()=>{const x=cityStayStats("호이안");return statCard("호이안 숙소",`${x.nights}박`,`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`)})()}
+      ${(()=>{const x=cityStayStats("다낭");return statCard("다낭 숙소",`${x.nights}박`,`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`)})()}
       ${statCard("기록 지출",money(spent),`${krw(spent)} · 예산 ${money(state.budget)}`)}
     </div>
 
@@ -805,6 +860,7 @@ function renderBookings(){
       <div class="card">
         <div class="card-head"><h3>🏨 숙소</h3><span class="lock-badge">🔒 고정</span></div>
         <div class="stack">${TRIP.stays.map(s=>`<div class="item"><div class="item-title">${stayLink(s)}</div><div class="item-meta">${escapeHtml(s.city)} · ${s.in} → ${s.out}</div></div>`).join("")}</div>
+        ${(TRIP.companions||[]).length?`<hr><div class="card-head"><h3>👪 동행 숙박</h3><span class="badge">가족 일정</span></div><div class="stack">${TRIP.companions.map(c=>{const s=companionStay(c);return `<div class="item"><div class="item-title">${escapeHtml(c.label)} · ${s?stayLink(s):"숙소"}</div><div class="item-meta">${c.in} → ${c.out}</div></div>`}).join("")}</div>`:""}
       </div>
     </div>
     <div class="section card">
@@ -1055,6 +1111,9 @@ document.getElementById("cloudStatusBtn").onclick=()=>{
 };
 document.querySelectorAll("[data-action='export-data']").forEach(b=>b.onclick=exportData);
 
+if(migrateCurrentItinerary(state)){
+  persistLocal();
+}
 render();
 updateCloudHeader();
 initFirebaseSync();
