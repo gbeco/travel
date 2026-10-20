@@ -9,11 +9,13 @@ const TRIP = {
     { id:"flight-in", type:"귀국", date:"2026-12-21", flight:"KE460", route:"다낭 → 인천공항", time:"23:00 → 05:20(+1)" }
   ],
   stays: [
-    { id:"stay-1", name:"실크 센스 호이안 리버 리조트", city:"호이안", in:"2026-11-16", out:"2026-11-23", mapQuery:"Silk Sense Hoi An River Resort" },
-    { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-23", out:"2026-11-30", mapQuery:"Eco & Rustic Home Hoian" },
-    { id:"stay-3", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07", mapQuery:"Vernal Hotel & Apartment Da Nang" },
-    { id:"stay-4", name:"TA Boutique Hotel", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"TA Boutique Hotel Da Nang" },
-    { id:"stay-5", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21", mapQuery:"Tam House Villa Hotel Da Nang" }
+    { id:"stay-1", name:"실크 센스 호이안 리버 리조트", city:"호이안", in:"2026-11-16", out:"2026-11-20", mapQuery:"Silk Sense Hoi An River Resort" },
+    { id:"stay-2", name:"Eco & Rustic Home Hoian", city:"호이안", in:"2026-11-20", out:"2026-11-27", mapQuery:"Eco & Rustic Home Hoian" },
+    { id:"stay-3", name:"Angel Garden Villa", city:"다낭", in:"2026-11-27", out:"2026-11-30", mapQuery:"Angel Garden Villa Hoian" },
+    { id:"stay-4", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-30", out:"2026-12-07", mapQuery:"Vernal Hotel & Apartment Da Nang" },
+    // { id:"stay-4-1", name:"Vernal Hotel & Apartment", city:"다낭", in:"2026-11-29", out:"2026-12-03", mapQuery:"Vernal Hotel & Apartment Da Nang" },
+    { id:"stay-5", name:"TA Boutique Hotel", city:"다낭", in:"2026-12-07", out:"2026-12-14", mapQuery:"TA Boutique Hotel Da Nang" },
+    { id:"stay-6", name:"땀 하우스 & 빌라 호텔", city:"다낭", in:"2026-12-14", out:"2026-12-21", mapQuery:"Tam House Villa Hotel Da Nang" }
   ],
   cities: {
     "호이안": { lat:15.8801, lon:108.3380 },
