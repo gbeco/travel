@@ -1,6 +1,7 @@
+
 "use strict";
 
-const TRIP = {
+const DEFAULT_TRIP = {
   start: "2026-11-16",
   end: "2026-12-22",
   flights: [
@@ -92,6 +93,7 @@ const DEFAULT_PLACES = [
 ];
 
 const DEFAULT_STATE = {
+  trip: DEFAULT_TRIP,
   dayPlans: DEFAULT_DAY_PLANS,
   dayNotes: {},
   baby: {},
@@ -103,7 +105,7 @@ const DEFAULT_STATE = {
   checklist: ["여권","여행자보험","아기 분유","이유식","기저귀","물티슈","상비약","충전기","유모차/아기띠"],
   checked: {},
   weather: { fetchedAt:null, cities:{} },
-  _meta: { updatedAt: 0 }
+  _meta: { updatedAt: 0, tripDataVersion: 0 }
 };
 
 let state = loadState();
@@ -136,6 +138,14 @@ function save(){
   scheduleCloudWrite();
 }
 
+
+function migrateTripData(target){
+  target._meta = target._meta || {};
+  if(Number(target._meta.tripDataVersion||0) >= 1 && target.trip) return false;
+  if(!target.trip) target.trip = clone(DEFAULT_TRIP);
+  target._meta.tripDataVersion = 1;
+  return true;
+}
 
 const ITINERARY_MIGRATION_20261020 = {
   "2026-11-20": { old:{a:"안방비치 · 점심 · 카페",b:"해변 카페만",c:"마사지 · 카페"}, next:{a:"실크 센스 체크아웃 → Eco & Rustic 체크인 · 숙소 적응",b:"숙소 이동 후 근처 식사",c:"체크인 후 휴식"} },
@@ -222,13 +232,18 @@ function applyRemoteState(remoteState, remoteUpdatedAt){
   state = deepMerge(clone(DEFAULT_STATE), remoteState);
   state._meta = state._meta || {};
   state._meta.updatedAt = Number(remoteUpdatedAt || state._meta.updatedAt || 0);
+  const needsTripMigration = migrateTripData(state) || !remoteState.trip;
   migrateCurrentItinerary(state);
+  if(needsTripMigration){
+    state._meta.updatedAt = Date.now();
+  }
   persistLocal();
   cloud.status = "synced";
   cloud.lastSyncedAt = Date.now();
   cloud.error = null;
   updateCloudHeader();
   render();
+  if(needsTripMigration) scheduleCloudWrite();
 }
 
 async function pushCloudState(){
@@ -239,7 +254,7 @@ async function pushCloudState(){
   try{
     const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
     await cloud.sdk.setDoc(cloud.docRef, {
-      schemaVersion: 3,
+      schemaVersion: 4,
       state: state,
       updatedAtClient,
       updatedAt: cloud.sdk.serverTimestamp()
@@ -425,6 +440,14 @@ function openFirebaseSetupModal(){
   `);
 }
 
+function tripData(){
+  if(!state.trip) state.trip = clone(DEFAULT_TRIP);
+  state.trip.flights = state.trip.flights || [];
+  state.trip.stays = state.trip.stays || [];
+  state.trip.companions = state.trip.companions || [];
+  state.trip.cities = state.trip.cities || clone(DEFAULT_TRIP.cities);
+  return state.trip;
+}
 function parseDate(s){ return new Date(s+"T00:00:00"); }
 function iso(d){ return new Date(d).toISOString().slice(0,10); }
 function dateRange(a,b){
@@ -432,24 +455,31 @@ function dateRange(a,b){
   while(d<=e){ out.push(iso(d)); d.setDate(d.getDate()+1); }
   return out;
 }
-const ALL_DATES = dateRange(TRIP.start,TRIP.end);
-
+function allDates(){
+  const t=tripData();
+  return dateRange(t.start,t.end);
+}
+function tripDays(){
+  const t=tripData();
+  return Math.round((parseDate(t.end)-parseDate(t.start))/86400000)+1;
+}
 function fmtDate(s, long=false){
   return parseDate(s).toLocaleDateString("ko-KR", long
     ? {year:"numeric",month:"long",day:"numeric",weekday:"short"}
     : {month:"numeric",day:"numeric",weekday:"short"});
 }
 function currentStay(date){
-  return TRIP.stays.find(s=>date>=s.in && date<s.out) || null;
+  return tripData().stays.find(s=>date>=s.in && date<s.out) || null;
 }
 function cityForDate(date){
-  return currentStay(date)?.city || (date==="2026-12-22" ? "한국" : "다낭");
+  const t=tripData();
+  return currentStay(date)?.city || (date===t.end ? "한국" : "다낭");
 }
 function nightsBetween(start,end){
   return Math.round((parseDate(end)-parseDate(start))/86400000);
 }
 function cityStayStats(city){
-  const stays=TRIP.stays.filter(s=>s.city===city);
+  const stays=tripData().stays.filter(s=>s.city===city).slice().sort((a,b)=>a.in.localeCompare(b.in));
   return {
     nights:stays.reduce((sum,s)=>sum+nightsBetween(s.in,s.out),0),
     start:stays.length?stays[0].in:null,
@@ -457,7 +487,7 @@ function cityStayStats(city){
   };
 }
 function companionStay(companion){
-  return TRIP.stays.find(s=>s.id===companion.stayId) || null;
+  return tripData().stays.find(s=>s.id===companion.stayId) || null;
 }
 function stayMapUrl(stay){
   const q = stay.mapQuery || `${stay.name} ${stay.city} Vietnam`;
@@ -468,20 +498,21 @@ function stayLink(stay, extraClass=""){
 }
 function renderWithStayLinks(text){
   let html = escapeHtml(text);
-  TRIP.stays.forEach(stay=>{
+  tripData().stays.forEach(stay=>{
     const safeName = escapeHtml(stay.name);
     html = html.split(safeName).join(stayLink(stay));
   });
   return html;
 }
 function lockedEvents(date){
+  const t=tripData();
   const events=[];
-  TRIP.flights.filter(f=>f.date===date).forEach(f=>events.push(`✈ ${f.flight} · ${f.time}`));
-  TRIP.stays.forEach(s=>{
-    if(s.in===date) events.push(`🔒 체크인 · ${s.name}`);
-    if(s.out===date) events.push(`🔒 체크아웃 · ${s.name}`);
+  t.flights.filter(f=>f.date===date).forEach(f=>events.push(`✈ ${f.flight} · ${f.time}`));
+  t.stays.forEach(stay=>{
+    if(stay.in===date) events.push(`🔒 체크인 · ${stay.name}`);
+    if(stay.out===date) events.push(`🔒 체크아웃 · ${stay.name}`);
   });
-  (TRIP.companions || []).forEach(c=>{
+  (t.companions || []).forEach(c=>{
     const stay=companionStay(c);
     const stayName=stay?.name || "동행 숙소";
     if(c.in===date) events.push(`👪 ${c.label} 체크인 · ${stayName}`);
@@ -501,7 +532,7 @@ function krw(v){ return `약 ${(Math.round(Number(v||0)*state.krwRate/1000)*1000
 function tripStatusText(){
   const today = new Date();
   today.setHours(0,0,0,0);
-  const start=parseDate(TRIP.start), end=parseDate(TRIP.end);
+  const t=tripData(), start=parseDate(t.start), end=parseDate(t.end);
   if(today<start){
     const d=Math.ceil((start-today)/86400000);
     return `출발 D-${d}`;
@@ -540,8 +571,8 @@ function render(){
 
 function nearestTripDate(){
   const today=iso(new Date());
-  if(today<TRIP.start) return TRIP.start;
-  if(today>TRIP.end) return TRIP.end;
+  if(today<tripData().start) return tripData().start;
+  if(today>tripData().end) return tripData().end;
   return today;
 }
 
@@ -566,9 +597,9 @@ function renderHome(){
   const weatherText=w ? `${weatherEmoji(w.code)} ${w.min}–${w.max}℃ · 강수확률 ${w.rain}%` : "예보 범위에 들어오면 조회 가능합니다.";
   document.getElementById("view").innerHTML=`
     <div class="grid grid-4">
-      ${statCard("여행 기간","37일","11/16 → 12/22")}
-      ${(()=>{const x=cityStayStats("호이안");return statCard("호이안 숙소",`${x.nights}박`,`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`)})()}
-      ${(()=>{const x=cityStayStats("다낭");return statCard("다낭 숙소",`${x.nights}박`,`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`)})()}
+      ${(()=>{const t=tripData();return statCard("여행 기간",`${tripDays()}일`,`${t.start.slice(5).replace("-","/")} → ${t.end.slice(5).replace("-","/")}`)})()}
+      ${(()=>{const x=cityStayStats("호이안");const r=x.start&&x.end?`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`:"—";return statCard("호이안 숙소",`${x.nights}박`,r)})()}
+      ${(()=>{const x=cityStayStats("다낭");const r=x.start&&x.end?`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`:"—";return statCard("다낭 숙소",`${x.nights}박`,r)})()}
       ${statCard("기록 지출",money(spent),`${krw(spent)} · 예산 ${money(state.budget)}`)}
     </div>
 
@@ -599,8 +630,8 @@ function renderHome(){
 
     <div class="section grid grid-2">
       <div class="card">
-        <div class="card-head"><h3>🔒 확정 숙소</h3><span class="badge">수정 불가</span></div>
-        <div class="stack">${TRIP.stays.map(stayRow).join("")}</div>
+        <div class="card-head"><h3>🔒 확정 숙소</h3><span class="badge">예약 화면에서 수정</span></div>
+        <div class="stack">${tripData().stays.map(stayRow).join("")}</div>
       </div>
       <div class="card">
         <div class="card-head"><h3>다음 고정 일정</h3></div>
@@ -642,7 +673,7 @@ function stayRow(s){
 function nextLockedEvents(){
   const ref=nearestTripDate();
   const arr=[];
-  ALL_DATES.forEach(d=>lockedEvents(d).forEach(event=>arr.push({date:d,event})));
+  allDates().forEach(d=>lockedEvents(d).forEach(event=>arr.push({date:d,event})));
   return arr.filter(x=>x.date>=ref);
 }
 
@@ -670,7 +701,7 @@ function monthCalendar(month,title){
   let cells=Array(blanks).fill(`<div class="day empty"></div>`);
   for(let day=1;day<=last.getDate();day++){
     const d=`${y}-${String(m).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-    if(d<TRIP.start || d>TRIP.end) {
+    if(d<tripData().start || d>tripData().end) {
       cells.push(`<div class="day empty"><div class="day-date">${day}</div></div>`);
       continue;
     }
@@ -835,7 +866,7 @@ function openPlaceToDayModal(id){
   const p=state.places.find(x=>x.id===id); if(!p)return;
   showModal(`
     <div class="modal-head"><div><div class="eyebrow">일정에 장소 추가</div><h2>${escapeHtml(p.name)}</h2></div><button class="btn small" data-close-modal>닫기</button></div>
-    <label class="field">날짜<select id="targetDate">${ALL_DATES.map(d=>`<option value="${d}">${fmtDate(d,true)} · ${cityForDate(d)}</option>`).join("")}</select></label>
+    <label class="field">날짜<select id="targetDate">${allDates().map(d=>`<option value="${d}">${fmtDate(d,true)} · ${cityForDate(d)}</option>`).join("")}</select></label>
     <label class="field" style="margin-top:12px">추가할 운영안<select id="targetPlan"><option>A</option><option>B</option><option>C</option></select></label>
     <div class="modal-footer"><button class="btn primary" id="addPlaceToDayBtn">추가</button></div>
   `);
@@ -850,17 +881,23 @@ function openPlaceToDayModal(id){
 }
 
 function renderBookings(){
-  setHeader("예약","항공·숙소는 고정하고 식당·투어·마사지 등의 추가 예약만 관리합니다.");
+  const t=tripData();
+  setHeader("예약","항공·숙소·동행은 여기서 수정하면 Firebase에 저장되고 전체 일정에 즉시 반영됩니다.");
   document.getElementById("view").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-head"><h3>✈ 항공</h3><span class="lock-badge">🔒 고정</span></div>
-        <div class="stack">${TRIP.flights.map(f=>`<div class="item"><div class="item-title">${f.type} · ${f.flight}</div><div class="item-meta">${fmtDate(f.date,true)}<br>${f.route}<br>${f.time}</div></div>`).join("")}</div>
+        <div class="card-head"><div><h3>✈ 항공</h3><div class="small muted">일정 화면에서는 고정</div></div><button class="btn primary small" id="addFlightBtn">+ 항공</button></div>
+        <div class="stack">${t.flights.length?t.flights.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(f=>`<div class="item">
+          <div class="row between wrap"><div><div class="item-title">${escapeHtml(f.type||"")} · ${escapeHtml(f.flight)}</div><div class="item-meta">${fmtDate(f.date,true)}<br>${escapeHtml(f.route||"")}<br>${escapeHtml(f.time||"")}</div></div><span class="lock-badge">🔒 일정 고정</span></div>
+          <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-flight="${f.id}">수정</button><button class="btn small danger" data-delete-flight="${f.id}">삭제</button></div>
+        </div>`).join(""):`<div class="muted small">등록된 항공편이 없습니다.</div>`}</div>
       </div>
       <div class="card">
-        <div class="card-head"><h3>🏨 숙소</h3><span class="lock-badge">🔒 고정</span></div>
-        <div class="stack">${TRIP.stays.map(s=>`<div class="item"><div class="item-title">${stayLink(s)}</div><div class="item-meta">${escapeHtml(s.city)} · ${s.in} → ${s.out}</div></div>`).join("")}</div>
-        ${(TRIP.companions||[]).length?`<hr><div class="card-head"><h3>👪 동행 숙박</h3><span class="badge">가족 일정</span></div><div class="stack">${TRIP.companions.map(c=>{const s=companionStay(c);return `<div class="item"><div class="item-title">${escapeHtml(c.label)} · ${s?stayLink(s):"숙소"}</div><div class="item-meta">${c.in} → ${c.out}</div></div>`}).join("")}</div>`:""}
+        <div class="card-head"><div><h3>🏨 숙소</h3><div class="small muted">체크인·체크아웃은 일정 화면에서 고정</div></div><button class="btn primary small" id="addStayBtn">+ 숙소</button></div>
+        <div class="stack">${t.stays.length?t.stays.slice().sort((a,b)=>a.in.localeCompare(b.in)).map(stayBookingItem).join(""):`<div class="muted small">등록된 숙소가 없습니다.</div>`}</div>
+        <hr>
+        <div class="card-head"><div><h3>👪 동행</h3><div class="small muted">가족 등 별도 숙박 일정</div></div><button class="btn small" id="addCompanionBtn">+ 동행</button></div>
+        <div class="stack">${(t.companions||[]).length?t.companions.map(companionBookingItem).join(""):`<div class="muted small">등록된 동행 일정이 없습니다.</div>`}</div>
       </div>
     </div>
     <div class="section card">
@@ -875,18 +912,126 @@ function renderBookings(){
       </div>
     </div>
   `;
+  document.getElementById("addFlightBtn").onclick=()=>openFlightModal();
+  document.getElementById("addStayBtn").onclick=()=>openStayModal();
+  document.getElementById("addCompanionBtn").onclick=()=>openCompanionModal();
   document.getElementById("addBookingBtn").onclick=openBookingModal;
+  document.querySelectorAll("[data-edit-flight]").forEach(b=>b.onclick=()=>openFlightModal(b.dataset.editFlight));
+  document.querySelectorAll("[data-delete-flight]").forEach(b=>b.onclick=()=>deleteFlight(b.dataset.deleteFlight));
+  document.querySelectorAll("[data-edit-stay]").forEach(b=>b.onclick=()=>openStayModal(b.dataset.editStay));
+  document.querySelectorAll("[data-delete-stay]").forEach(b=>b.onclick=()=>deleteStay(b.dataset.deleteStay));
+  document.querySelectorAll("[data-edit-companion]").forEach(b=>b.onclick=()=>openCompanionModal(b.dataset.editCompanion));
+  document.querySelectorAll("[data-delete-companion]").forEach(b=>b.onclick=()=>deleteCompanion(b.dataset.deleteCompanion));
   document.querySelectorAll("[data-delete-booking]").forEach(b=>b.onclick=()=>{
     state.customBookings=state.customBookings.filter(x=>x.id!==b.dataset.deleteBooking);save();renderBookings();
   });
 }
+function stayBookingItem(s){
+  return `<div class="item">
+    <div class="row between wrap"><div><div class="item-title">${stayLink(s)}</div><div class="item-meta">${escapeHtml(s.city)} · ${s.in} → ${s.out} · ${nightsBetween(s.in,s.out)}박</div></div><span class="lock-badge">🔒 일정 고정</span></div>
+    <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-stay="${s.id}">수정</button><button class="btn small danger" data-delete-stay="${s.id}">삭제</button></div>
+  </div>`;
+}
+function companionBookingItem(c){
+  const s=companionStay(c);
+  return `<div class="item"><div class="item-title">${escapeHtml(c.label)} · ${s?stayLink(s):"숙소 미지정"}</div><div class="item-meta">${c.in} → ${c.out}</div>
+    <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-companion="${c.id}">수정</button><button class="btn small danger" data-delete-companion="${c.id}">삭제</button></div></div>`;
+}
+function makeId(prefix){ return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`; }
+function openFlightModal(id=null){
+  const t=tripData();
+  const f=id?t.flights.find(x=>x.id===id):null;
+  showModal(`
+    <div class="modal-head"><div><div class="eyebrow">FLIGHT</div><h2>${f?"항공편 수정":"항공편 추가"}</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+    <div class="form-grid">
+      <label class="field">구분<input id="flightType" value="${attr(f?.type||"")}" placeholder="출국 / 귀국"></label>
+      <label class="field">편명<input id="flightNumber" value="${attr(f?.flight||"")}" placeholder="KE457"></label>
+      <label class="field">날짜<input id="flightDate" type="date" value="${attr(f?.date||t.start)}"></label>
+      <label class="field">시간<input id="flightTime" value="${attr(f?.time||"")}" placeholder="11:10 → 14:15"></label>
+    </div>
+    <label class="field" style="margin-top:12px">구간<input id="flightRoute" value="${attr(f?.route||"")}" placeholder="인천공항 T2 → 다낭"></label>
+    <div class="modal-footer"><button class="btn primary" id="saveFlightBtn">저장</button></div>
+  `);
+  document.getElementById("saveFlightBtn").onclick=()=>{
+    const flight=document.getElementById("flightNumber").value.trim(), date=document.getElementById("flightDate").value;
+    if(!flight||!date){alert("편명과 날짜를 입력해주세요.");return;}
+    const item={id:f?.id||makeId("flight"),type:document.getElementById("flightType").value.trim(),flight,date,route:document.getElementById("flightRoute").value.trim(),time:document.getElementById("flightTime").value.trim()};
+    if(f) Object.assign(f,item); else t.flights.push(item);
+    t.flights.sort((a,b)=>a.date.localeCompare(b.date));
+    save();closeModal();renderBookings();
+  };
+}
+function deleteFlight(id){
+  if(!confirm("이 항공편을 삭제할까요?")) return;
+  tripData().flights=tripData().flights.filter(x=>x.id!==id);save();renderBookings();
+}
+function openStayModal(id=null){
+  const t=tripData();
+  const s=id?t.stays.find(x=>x.id===id):null;
+  showModal(`
+    <div class="modal-head"><div><div class="eyebrow">STAY</div><h2>${s?"숙소 수정":"숙소 추가"}</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+    <div class="form-grid">
+      <label class="field">숙소명<input id="stayName" value="${attr(s?.name||"")}"></label>
+      <label class="field">지역<input id="stayCity" value="${attr(s?.city||"다낭")}" placeholder="호이안 / 다낭"></label>
+      <label class="field">체크인<input id="stayIn" type="date" value="${attr(s?.in||t.start)}"></label>
+      <label class="field">체크아웃<input id="stayOut" type="date" value="${attr(s?.out||t.end)}"></label>
+    </div>
+    <label class="field" style="margin-top:12px">Google Maps 검색어<input id="stayMapQuery" value="${attr(s?.mapQuery||"")}" placeholder="호텔 영문명 + 도시"></label>
+    <div class="note" style="margin-top:12px">저장하면 홈·캘린더·체크인/체크아웃 일정·Google Maps 링크가 모두 즉시 바뀝니다.</div>
+    <div class="modal-footer"><button class="btn primary" id="saveStayBtn">저장</button></div>
+  `);
+  document.getElementById("saveStayBtn").onclick=()=>{
+    const name=document.getElementById("stayName").value.trim(), city=document.getElementById("stayCity").value.trim();
+    const inn=document.getElementById("stayIn").value, out=document.getElementById("stayOut").value;
+    if(!name||!city||!inn||!out){alert("숙소명, 지역, 체크인/체크아웃을 입력해주세요.");return;}
+    if(out<=inn){alert("체크아웃은 체크인 이후 날짜여야 합니다.");return;}
+    const item={id:s?.id||makeId("stay"),name,city,in:inn,out,mapQuery:document.getElementById("stayMapQuery").value.trim()};
+    if(s) Object.assign(s,item); else t.stays.push(item);
+    t.stays.sort((a,b)=>a.in.localeCompare(b.in));
+    save();closeModal();renderBookings();
+  };
+}
+function deleteStay(id){
+  const linked=(tripData().companions||[]).filter(c=>c.stayId===id);
+  if(linked.length){alert(`이 숙소를 사용하는 동행 일정(${linked.map(x=>x.label).join(", ")})이 있어 먼저 동행 일정을 수정하거나 삭제해야 합니다.`);return;}
+  if(!confirm("이 숙소를 삭제할까요? 체크인/체크아웃 고정 일정에서도 제거됩니다.")) return;
+  tripData().stays=tripData().stays.filter(x=>x.id!==id);save();renderBookings();
+}
+function openCompanionModal(id=null){
+  const t=tripData();
+  const c=id?(t.companions||[]).find(x=>x.id===id):null;
+  if(!t.stays.length){alert("먼저 숙소를 등록해주세요.");return;}
+  showModal(`
+    <div class="modal-head"><div><div class="eyebrow">COMPANION</div><h2>${c?"동행 일정 수정":"동행 일정 추가"}</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+    <div class="form-grid">
+      <label class="field">동행 이름<input id="compLabel" value="${attr(c?.label||"")}" placeholder="장인·장모님"></label>
+      <label class="field">숙소<select id="compStay">${t.stays.map(s=>`<option value="${attr(s.id)}" ${c?.stayId===s.id?"selected":""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+      <label class="field">시작일<input id="compIn" type="date" value="${attr(c?.in||t.start)}"></label>
+      <label class="field">종료일<input id="compOut" type="date" value="${attr(c?.out||t.end)}"></label>
+    </div>
+    <div class="modal-footer"><button class="btn primary" id="saveCompBtn">저장</button></div>
+  `);
+  document.getElementById("saveCompBtn").onclick=()=>{
+    const label=document.getElementById("compLabel").value.trim(), inn=document.getElementById("compIn").value, out=document.getElementById("compOut").value;
+    if(!label||!inn||!out){alert("동행 이름과 날짜를 입력해주세요.");return;}
+    if(out<=inn){alert("종료일은 시작일 이후여야 합니다.");return;}
+    const item={id:c?.id||makeId("companion"),label,stayId:document.getElementById("compStay").value,in:inn,out};
+    if(c) Object.assign(c,item); else t.companions.push(item);
+    save();closeModal();renderBookings();
+  };
+}
+function deleteCompanion(id){
+  if(!confirm("이 동행 일정을 삭제할까요?")) return;
+  tripData().companions=tripData().companions.filter(x=>x.id!==id);save();renderBookings();
+}
 function openBookingModal(){
+  const t=tripData();
   showModal(`
     <div class="modal-head"><div><div class="eyebrow">BOOKING</div><h2>예약 추가</h2></div><button class="btn small" data-close-modal>닫기</button></div>
     <div class="form-grid">
       <label class="field">이름<input id="bookName"></label>
       <label class="field">종류<select id="bookType"><option>식당</option><option>투어</option><option>마사지</option><option>픽업/교통</option><option>기타</option></select></label>
-      <label class="field">날짜<input id="bookDate" type="date" min="${TRIP.start}" max="${TRIP.end}"></label>
+      <label class="field">날짜<input id="bookDate" type="date" min="${t.start}" max="${t.end}"></label>
       <label class="field">상태<select id="bookStatus"><option>예약 완료</option><option>예약 예정</option><option>결제 완료</option><option>현장 결제</option></select></label>
       <label class="field">예약번호<input id="bookConfirmation"></label>
       <label class="field">금액(VND)<input id="bookAmount" type="number" min="0"></label>
@@ -947,7 +1092,7 @@ function openExpenseModal(){
   showModal(`
     <div class="modal-head"><div><div class="eyebrow">EXPENSE</div><h2>지출 추가</h2></div><button class="btn small" data-close-modal>닫기</button></div>
     <div class="form-grid">
-      <label class="field">날짜<input id="expDate" type="date" value="${nearestTripDate()}" min="${TRIP.start}" max="${TRIP.end}"></label>
+      <label class="field">날짜<input id="expDate" type="date" value="${nearestTripDate()}" min="${tripData().start}" max="${tripData().end}"></label>
       <label class="field">분류<select id="expCat"><option>식사</option><option>교통</option><option>카페</option><option>관광</option><option>마사지</option><option>아기</option><option>쇼핑</option><option>기타</option></select></label>
       <label class="field">내용<input id="expName"></label>
       <label class="field">금액(VND)<input id="expAmount" type="number" min="0" step="1000"></label>
@@ -1040,7 +1185,7 @@ async function refreshWeather(){
   try{
     const results={};
     for(const city of ["호이안","다낭"]){
-      const {lat,lon}=TRIP.cities[city];
+      const {lat,lon}=tripData().cities[city];
       const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=16&timezone=Asia%2FBangkok`;
       const r=await fetch(url);
       if(!r.ok) throw new Error("weather fetch failed");
@@ -1057,7 +1202,7 @@ async function refreshWeather(){
       results[city]=map;
     }
     state.weather={fetchedAt:new Date().toISOString(),cities:results};save();render();
-    const dates=ALL_DATES.filter(d=>weatherFor(d));
+    const dates=allDates().filter(d=>weatherFor(d));
     if(!dates.length) alert("조회는 성공했지만 여행 날짜가 아직 16일 예보 범위 밖입니다. 출발이 가까워지면 일정표에 날씨가 표시됩니다.");
   }catch(e){
     alert("날씨를 불러오지 못했습니다. 인터넷 연결 후 다시 시도해주세요.");
@@ -1068,7 +1213,7 @@ async function refreshWeather(){
 }
 
 function exportData(){
-  const payload={version:3,exportedAt:new Date().toISOString(),trip:TRIP,state};
+  const payload={version:4,exportedAt:new Date().toISOString(),trip:tripData(),state};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -1085,6 +1230,7 @@ document.getElementById("importFile").addEventListener("change", async e=>{
   try{
     const data=JSON.parse(await file.text());
     if(!data.state)throw new Error();
+    if(data.trip && !data.state.trip) data.state.trip=data.trip;
     state=deepMerge(clone(DEFAULT_STATE),data.state);save();render();alert("데이터를 복원했습니다.");
   }catch(err){alert("올바른 백업 파일이 아닙니다.");}
   e.target.value="";
@@ -1111,7 +1257,9 @@ document.getElementById("cloudStatusBtn").onclick=()=>{
 };
 document.querySelectorAll("[data-action='export-data']").forEach(b=>b.onclick=exportData);
 
-if(migrateCurrentItinerary(state)){
+const didTripMigration = migrateTripData(state);
+const didItineraryMigration = migrateCurrentItinerary(state);
+if(didTripMigration || didItineraryMigration){
   persistLocal();
 }
 render();
