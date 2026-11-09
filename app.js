@@ -948,7 +948,7 @@ function renderHome(){
           </article>
 
           <article class="portal-panel weather-visual" style="background-image:linear-gradient(90deg,rgba(255,255,255,.97) 0%,rgba(255,255,255,.78) 45%,rgba(255,255,255,.12) 100%),url('./assets/weather-danang.svg')">
-            <div class="panel-title-row"><div><span class="panel-icon">⛅</span><h2>${escapeHtml(city)} 날씨</h2></div><button id="homeWeatherBtn">새로고침 ›</button></div>
+            <div class="panel-title-row"><div><span class="panel-icon">⛅</span><h2>${escapeHtml(city)} 날씨</h2><small class="weather-date-label">${fmtDate(d,true)} 예보</small></div><button id="homeWeatherBtn">새로고침 ›</button></div>
             ${w?`<div class="weather-big"><span>${weatherEmoji(w.code)}</span><strong>${w.max}°C</strong><div><b>최고 ${w.max}°C</b><b>최저 ${w.min}°C</b><small>강수확률 ${w.rain}%</small></div></div>`:`<div class="weather-big waiting"><span>🌤️</span><strong>예보 대기</strong><div><b>여행일이 가까워지면</b><small>최대 16일 예보가 표시됩니다.</small></div></div>`}
           </article>
         </section>
