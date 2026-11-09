@@ -140,11 +140,19 @@ function save(){
 }
 
 
+const LATEST_TRIP_DATA_VERSION = 20261109;
+const PUBLIC_SCHEMA_VERSION = 2;
+
 function migrateTripData(target){
   target._meta = target._meta || {};
-  if(Number(target._meta.tripDataVersion||0) >= 1 && target.trip) return false;
-  if(!target.trip) target.trip = clone(DEFAULT_TRIP);
-  target._meta.tripDataVersion = 1;
+  const currentVersion = Number(target._meta.tripDataVersion || 0);
+  if(currentVersion >= LATEST_TRIP_DATA_VERSION && target.trip) return false;
+
+  // One-time migration from legacy hard-coded/public trip data to the latest
+  // confirmed itinerary. After this version is stored, Firestore becomes the
+  // source of truth and later admin edits are not overwritten by defaults.
+  target.trip = clone(DEFAULT_TRIP);
+  target._meta.tripDataVersion = LATEST_TRIP_DATA_VERSION;
   return true;
 }
 
@@ -258,12 +266,24 @@ function publicPayload(){
   };
 }
 
-function applyPublicData(publicState, updatedAtClient=0){
+function applyPublicData(publicState, updatedAtClient=0, schemaVersion=1){
   if(!publicState || typeof publicState !== "object") return;
   PUBLIC_KEYS.forEach(key=>{
     if(publicState[key] !== undefined) state[key] = clone(publicState[key]);
   });
   state._meta = state._meta || {};
+
+  // Legacy publicTrips/main documents (schemaVersion 1) may still contain
+  // an old hotel schedule. Correct it locally for every viewer immediately.
+  // When an admin is signed in, the corrected payload is written back once
+  // as schemaVersion 2 so Firestore remains the source of truth afterwards.
+  const needsPublicTripMigration = Number(schemaVersion || 1) < PUBLIC_SCHEMA_VERSION;
+  let migrated = false;
+  if(needsPublicTripMigration){
+    migrated = migrateTripData(state) || migrated;
+    migrated = migrateCurrentItinerary(state) || migrated;
+  }
+
   state._meta.publicUpdatedAt = Number(updatedAtClient || 0);
   cloud.publicUpdatedAt = Number(updatedAtClient || 0);
   cloud.publicLoaded = true;
@@ -273,6 +293,11 @@ function applyPublicData(publicState, updatedAtClient=0){
   persistLocal();
   updateCloudHeader();
   render();
+
+  if(migrated && canEditShared()){
+    schedulePrivateWrite();
+    schedulePublicWrite();
+  }
 }
 
 function stripPrivateForViewer(){
@@ -304,7 +329,7 @@ async function pushPrivateState(){
   try{
     const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
     await cloud.sdk.setDoc(cloud.privateDocRef, {
-      schemaVersion: 5,
+      schemaVersion: 6,
       state,
       updatedAtClient,
       updatedAt: cloud.sdk.serverTimestamp()
@@ -325,7 +350,7 @@ async function pushPublicState(){
     state._meta = state._meta || {};
     state._meta.publicUpdatedAt = updatedAtClient;
     await cloud.sdk.setDoc(cloud.publicDocRef, {
-      schemaVersion: 1,
+      schemaVersion: PUBLIC_SCHEMA_VERSION,
       publicState: publicPayload(),
       updatedAtClient,
       updatedAt: cloud.sdk.serverTimestamp()
@@ -373,7 +398,7 @@ function subscribePublicTrip(){
       const remote=snap.data();
       const remoteUpdatedAt=Number(remote.updatedAtClient||0);
       if(remoteUpdatedAt >= cloud.publicUpdatedAt){
-        applyPublicData(remote.publicState, remoteUpdatedAt);
+        applyPublicData(remote.publicState, remoteUpdatedAt, Number(remote.schemaVersion||1));
       }
     },
     err=>{
@@ -423,7 +448,7 @@ async function connectAdminUser(user){
 
     if(publicSnap.exists()){
       const pub=publicSnap.data();
-      applyPublicData(pub.publicState, Number(pub.updatedAtClient||0));
+      applyPublicData(pub.publicState, Number(pub.updatedAtClient||0), Number(pub.schemaVersion||1));
       if(privateSnap.exists()) mergePrivateState(privateSnap.data().state);
     }else if(privateSnap.exists()){
       const remote=privateSnap.data();
