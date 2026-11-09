@@ -135,7 +135,8 @@ function save(){
   state._meta = state._meta || {};
   state._meta.updatedAt = Date.now();
   persistLocal();
-  scheduleCloudWrite();
+  schedulePrivateWrite();
+  schedulePublicWrite();
 }
 
 
@@ -179,17 +180,29 @@ function migrateCurrentItinerary(target){
   return changed;
 }
 
+const PUBLIC_TRIP_PATH = ["publicTrips", "main"];
+const PUBLIC_KEYS = ["trip", "dayPlans", "dayNotes", "places"];
+
 const cloud = {
   configured: false,
   loading: true,
   user: null,
+  isAdmin: false,
+  adminChecked: false,
   auth: null,
   db: null,
-  docRef: null,
+  privateDocRef: null,
+  publicDocRef: null,
+  adminDocRef: null,
   sdk: null,
-  unsubscribe: null,
-  writeTimer: null,
+  privateUnsubscribe: null,
+  publicUnsubscribe: null,
+  privateWriteTimer: null,
+  publicWriteTimer: null,
   status: "Firebase 확인 중",
+  publicLoaded: false,
+  publicExists: false,
+  publicUpdatedAt: 0,
   lastSyncedAt: null,
   error: null
 };
@@ -200,14 +213,20 @@ function isFirebaseConfigured(config){
   return required.every(k => config[k] && !String(config[k]).includes("YOUR_"));
 }
 
+function canEditShared(){
+  return !!(cloud.configured && cloud.user && cloud.isAdmin);
+}
+
 function cloudStatusLabel(){
   if(cloud.loading) return "☁️ Firebase 확인 중";
-  if(!cloud.configured) return "💾 이 기기에 저장";
-  if(cloud.error) return "⚠️ 동기화 오류";
-  if(!cloud.user) return "💾 로그인 전 · 로컬";
-  if(cloud.status === "syncing") return "☁️ 동기화 중…";
-  if(cloud.status === "synced") return "☁️ Firebase 동기화됨";
-  return "☁️ Firebase 연결됨";
+  if(!cloud.configured) return "💾 로컬 일정";
+  if(cloud.error && !cloud.publicLoaded) return "⚠️ 공용 일정 오류";
+  if(cloud.status === "syncing" && canEditShared()) return "☁️ 관리자 동기화 중…";
+  if(canEditShared()) return "☁️ 관리자 · 공용 일정 동기화됨";
+  if(cloud.user && cloud.adminChecked && !cloud.isAdmin) return "👁️ 보기 전용";
+  if(cloud.publicLoaded && !cloud.publicExists) return "☁️ 공용 일정 준비 중";
+  if(cloud.publicLoaded) return "☁️ 공용 일정 최신";
+  return "☁️ 공용 일정 연결 중…";
 }
 
 function updateCloudHeader(){
@@ -218,180 +237,306 @@ function updateCloudHeader(){
     if(!cloud.configured){
       authBtn.textContent = "Firebase 설정";
     }else if(cloud.user){
-      authBtn.textContent = "로그아웃";
+      authBtn.textContent = canEditShared() ? "관리자 로그아웃" : "로그아웃";
       authBtn.title = cloud.user.email || cloud.user.displayName || "";
     }else{
-      authBtn.textContent = "Google 로그인";
-      authBtn.title = "";
+      authBtn.textContent = "관리자 로그인";
+      authBtn.title = "일정 수정은 관리자 로그인 후 가능합니다.";
     }
   }
+  document.querySelectorAll("[data-action='export-data']").forEach(btn=>{
+    if(btn.closest('.top-actions')) btn.style.display = canEditShared() ? "" : "none";
+  });
 }
 
-function applyRemoteState(remoteState, remoteUpdatedAt){
-  if(!remoteState) return;
-  state = deepMerge(clone(DEFAULT_STATE), remoteState);
+function publicPayload(){
+  return {
+    trip: clone(state.trip || DEFAULT_TRIP),
+    dayPlans: clone(state.dayPlans || {}),
+    dayNotes: clone(state.dayNotes || {}),
+    places: clone(state.places || [])
+  };
+}
+
+function applyPublicData(publicState, updatedAtClient=0){
+  if(!publicState || typeof publicState !== "object") return;
+  PUBLIC_KEYS.forEach(key=>{
+    if(publicState[key] !== undefined) state[key] = clone(publicState[key]);
+  });
   state._meta = state._meta || {};
-  state._meta.updatedAt = Number(remoteUpdatedAt || state._meta.updatedAt || 0);
-  const needsTripMigration = migrateTripData(state) || !remoteState.trip;
-  migrateCurrentItinerary(state);
-  if(needsTripMigration){
-    state._meta.updatedAt = Date.now();
-  }
-  persistLocal();
+  state._meta.publicUpdatedAt = Number(updatedAtClient || 0);
+  cloud.publicUpdatedAt = Number(updatedAtClient || 0);
+  cloud.publicLoaded = true;
+  cloud.publicExists = true;
   cloud.status = "synced";
-  cloud.lastSyncedAt = Date.now();
   cloud.error = null;
+  persistLocal();
   updateCloudHeader();
   render();
-  if(needsTripMigration) scheduleCloudWrite();
 }
 
-async function pushCloudState(){
-  if(!cloud.configured || !cloud.user || !cloud.docRef || !cloud.sdk) return;
+function stripPrivateForViewer(){
+  const publicCopy={};
+  PUBLIC_KEYS.forEach(key=>publicCopy[key]=clone(state[key]));
+  const weather=clone(state.weather||DEFAULT_STATE.weather);
+  state=clone(DEFAULT_STATE);
+  PUBLIC_KEYS.forEach(key=>state[key]=publicCopy[key]);
+  state.weather=weather;
+  state._meta=state._meta||{};
+  state._meta.publicUpdatedAt=cloud.publicUpdatedAt||0;
+  persistLocal();
+}
+
+function mergePrivateState(privateState){
+  if(!privateState || typeof privateState !== "object") return;
+  const preservedPublic = {};
+  PUBLIC_KEYS.forEach(key=>preservedPublic[key]=clone(state[key]));
+  const merged = deepMerge(clone(DEFAULT_STATE), privateState);
+  PUBLIC_KEYS.forEach(key=>merged[key]=preservedPublic[key]);
+  state = merged;
+  migrateTripData(state);
+  migrateCurrentItinerary(state);
+  persistLocal();
+}
+
+async function pushPrivateState(){
+  if(!canEditShared() || !cloud.privateDocRef || !cloud.sdk) return;
+  try{
+    const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
+    await cloud.sdk.setDoc(cloud.privateDocRef, {
+      schemaVersion: 5,
+      state,
+      updatedAtClient,
+      updatedAt: cloud.sdk.serverTimestamp()
+    });
+  }catch(err){
+    console.error("Firebase private sync write failed", err);
+    cloud.error = err;
+  }
+}
+
+async function pushPublicState(){
+  if(!canEditShared() || !cloud.publicDocRef || !cloud.sdk) return;
   cloud.status = "syncing";
   cloud.error = null;
   updateCloudHeader();
   try{
-    const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
-    await cloud.sdk.setDoc(cloud.docRef, {
-      schemaVersion: 4,
-      state: state,
+    const updatedAtClient = Date.now();
+    state._meta = state._meta || {};
+    state._meta.publicUpdatedAt = updatedAtClient;
+    await cloud.sdk.setDoc(cloud.publicDocRef, {
+      schemaVersion: 1,
+      publicState: publicPayload(),
       updatedAtClient,
       updatedAt: cloud.sdk.serverTimestamp()
     });
+    cloud.publicExists = true;
+    cloud.publicLoaded = true;
+    cloud.publicUpdatedAt = updatedAtClient;
     cloud.status = "synced";
     cloud.lastSyncedAt = Date.now();
+    persistLocal();
   }catch(err){
-    console.error("Firebase sync write failed", err);
+    console.error("Firebase public sync write failed", err);
     cloud.status = "error";
     cloud.error = err;
   }
   updateCloudHeader();
 }
 
-function scheduleCloudWrite(){
-  if(!cloud.configured || !cloud.user || !cloud.docRef) return;
-  clearTimeout(cloud.writeTimer);
-  cloud.writeTimer = setTimeout(pushCloudState, 700);
+function schedulePrivateWrite(){
+  if(!canEditShared() || !cloud.privateDocRef) return;
+  clearTimeout(cloud.privateWriteTimer);
+  cloud.privateWriteTimer = setTimeout(pushPrivateState, 700);
 }
 
-async function connectSignedInUser(user){
-  cloud.user = user;
-  cloud.error = null;
+function schedulePublicWrite(){
+  if(!canEditShared() || !cloud.publicDocRef) return;
+  clearTimeout(cloud.publicWriteTimer);
+  cloud.publicWriteTimer = setTimeout(pushPublicState, 700);
+}
+
+function subscribePublicTrip(){
+  if(!cloud.publicDocRef || !cloud.sdk) return;
+  if(cloud.publicUnsubscribe) cloud.publicUnsubscribe();
+  cloud.publicUnsubscribe = cloud.sdk.onSnapshot(
+    cloud.publicDocRef,
+    { includeMetadataChanges: true },
+    snap=>{
+      if(!snap.exists()){
+        cloud.publicLoaded = true;
+        cloud.publicExists = false;
+        updateCloudHeader();
+        return;
+      }
+      if(snap.metadata.hasPendingWrites) return;
+      const remote=snap.data();
+      const remoteUpdatedAt=Number(remote.updatedAtClient||0);
+      if(remoteUpdatedAt >= cloud.publicUpdatedAt){
+        applyPublicData(remote.publicState, remoteUpdatedAt);
+      }
+    },
+    err=>{
+      console.error("Public trip subscription failed",err);
+      cloud.error=err;
+      cloud.publicLoaded=false;
+      updateCloudHeader();
+    }
+  );
+}
+
+async function checkAdminRole(user){
+  cloud.adminChecked=false;
+  cloud.isAdmin=false;
+  if(!user || !cloud.sdk || !cloud.db) return false;
+  try{
+    cloud.adminDocRef=cloud.sdk.doc(cloud.db,"admins",user.uid);
+    const snap=await cloud.sdk.getDoc(cloud.adminDocRef);
+    cloud.isAdmin=snap.exists();
+  }catch(err){
+    console.error("Admin role check failed",err);
+    cloud.isAdmin=false;
+  }
+  cloud.adminChecked=true;
+  updateCloudHeader();
+  return cloud.isAdmin;
+}
+
+async function connectAdminUser(user){
+  cloud.user=user;
+  cloud.error=null;
   updateCloudHeader();
 
-  if(cloud.unsubscribe){
-    cloud.unsubscribe();
-    cloud.unsubscribe = null;
+  if(cloud.privateUnsubscribe){
+    cloud.privateUnsubscribe();
+    cloud.privateUnsubscribe=null;
   }
 
-  const { doc, getDoc, onSnapshot } = cloud.sdk;
-  cloud.docRef = doc(cloud.db, "users", user.uid, "tripData", "current");
+  const {doc,getDoc,onSnapshot}=cloud.sdk;
+  cloud.privateDocRef=doc(cloud.db,"users",user.uid,"tripData","current");
 
   try{
-    const snap = await getDoc(cloud.docRef);
-    const localUpdatedAt = Number(state._meta?.updatedAt || 0);
+    const [privateSnap, publicSnap] = await Promise.all([
+      getDoc(cloud.privateDocRef),
+      getDoc(cloud.publicDocRef)
+    ]);
 
-    if(snap.exists()){
-      const remote = snap.data();
-      const remoteUpdatedAt = Number(remote.updatedAtClient || 0);
-      if(remoteUpdatedAt > localUpdatedAt){
-        applyRemoteState(remote.state, remoteUpdatedAt);
-      }else{
-        await pushCloudState();
-      }
+    if(publicSnap.exists()){
+      const pub=publicSnap.data();
+      applyPublicData(pub.publicState, Number(pub.updatedAtClient||0));
+      if(privateSnap.exists()) mergePrivateState(privateSnap.data().state);
+    }else if(privateSnap.exists()){
+      const remote=privateSnap.data();
+      state=deepMerge(clone(DEFAULT_STATE),remote.state||{});
+      migrateTripData(state);
+      migrateCurrentItinerary(state);
+      persistLocal();
+      await pushPublicState();
     }else{
-      await pushCloudState();
+      migrateTripData(state);
+      migrateCurrentItinerary(state);
+      persistLocal();
+      await Promise.all([pushPrivateState(),pushPublicState()]);
     }
 
-    cloud.unsubscribe = onSnapshot(
-      cloud.docRef,
-      { includeMetadataChanges: true },
-      snap2 => {
+    cloud.privateUnsubscribe=onSnapshot(
+      cloud.privateDocRef,
+      {includeMetadataChanges:true},
+      snap2=>{
         if(!snap2.exists() || snap2.metadata.hasPendingWrites) return;
-        const remote = snap2.data();
-        const remoteUpdatedAt = Number(remote.updatedAtClient || 0);
-        const localUpdatedAt = Number(state._meta?.updatedAt || 0);
-        if(remoteUpdatedAt > localUpdatedAt){
-          applyRemoteState(remote.state, remoteUpdatedAt);
-        }else{
-          cloud.status = "synced";
-          cloud.lastSyncedAt = Date.now();
-          updateCloudHeader();
-        }
+        mergePrivateState(snap2.data().state);
+        cloud.status="synced";
+        cloud.lastSyncedAt=Date.now();
+        updateCloudHeader();
+        render();
       },
-      err => {
-        console.error("Firebase snapshot failed", err);
-        cloud.error = err;
-        cloud.status = "error";
+      err=>{
+        console.error("Private snapshot failed",err);
+        cloud.error=err;
         updateCloudHeader();
       }
     );
+
+    await pushPrivateState();
+    cloud.status="synced";
+    updateCloudHeader();
+    render();
   }catch(err){
-    console.error("Firebase initial sync failed", err);
-    cloud.error = err;
-    cloud.status = "error";
+    console.error("Firebase admin sync failed",err);
+    cloud.error=err;
+    cloud.status="error";
     updateCloudHeader();
   }
 }
 
 async function initFirebaseSync(){
   try{
-    const configModule = await import("./firebase-config.js");
-    const config = configModule.firebaseConfig;
-    cloud.configured = isFirebaseConfigured(config);
-    cloud.loading = false;
+    const configModule=await import("./firebase-config.js");
+    const config=configModule.firebaseConfig;
+    cloud.configured=isFirebaseConfigured(config);
+    cloud.loading=false;
     updateCloudHeader();
-
     if(!cloud.configured) return;
 
-    const VERSION = "12.19.0";
-    const [appMod, authMod, firestoreMod] = await Promise.all([
+    const VERSION="12.19.0";
+    const [appMod,authMod,firestoreMod]=await Promise.all([
       import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-app.js`),
       import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-auth.js`),
       import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-firestore.js`)
     ]);
 
-    const firebaseApp = appMod.initializeApp(config);
-    cloud.auth = authMod.getAuth(firebaseApp);
-    cloud.db = firestoreMod.getFirestore(firebaseApp);
-    cloud.sdk = {
-      GoogleAuthProvider: authMod.GoogleAuthProvider,
-      signInWithPopup: authMod.signInWithPopup,
-      signOut: authMod.signOut,
-      doc: firestoreMod.doc,
-      getDoc: firestoreMod.getDoc,
-      setDoc: firestoreMod.setDoc,
-      onSnapshot: firestoreMod.onSnapshot,
-      serverTimestamp: firestoreMod.serverTimestamp
+    const firebaseApp=appMod.initializeApp(config);
+    cloud.auth=authMod.getAuth(firebaseApp);
+    cloud.db=firestoreMod.getFirestore(firebaseApp);
+    try{ await authMod.setPersistence(cloud.auth,authMod.browserLocalPersistence); }catch(e){ console.warn("Auth persistence",e); }
+    cloud.sdk={
+      GoogleAuthProvider:authMod.GoogleAuthProvider,
+      signInWithPopup:authMod.signInWithPopup,
+      signOut:authMod.signOut,
+      doc:firestoreMod.doc,
+      getDoc:firestoreMod.getDoc,
+      setDoc:firestoreMod.setDoc,
+      onSnapshot:firestoreMod.onSnapshot,
+      serverTimestamp:firestoreMod.serverTimestamp
     };
 
-    authMod.onAuthStateChanged(cloud.auth, user => {
+    cloud.publicDocRef=firestoreMod.doc(cloud.db,...PUBLIC_TRIP_PATH);
+    subscribePublicTrip();
+
+    authMod.onAuthStateChanged(cloud.auth,async user=>{
+      cloud.user=user||null;
+      cloud.adminChecked=false;
+      cloud.isAdmin=false;
+      if(cloud.privateUnsubscribe){
+        cloud.privateUnsubscribe();
+        cloud.privateUnsubscribe=null;
+      }
+      cloud.privateDocRef=null;
+
       if(user){
-        connectSignedInUser(user);
-      }else{
-        if(cloud.unsubscribe){
-          cloud.unsubscribe();
-          cloud.unsubscribe = null;
+        const admin=await checkAdminRole(user);
+        if(admin){
+          await connectAdminUser(user);
+        }else{
+          stripPrivateForViewer();
+          cloud.status="viewer";
+          updateCloudHeader();
+          render();
         }
-        cloud.user = null;
-        cloud.docRef = null;
-        cloud.status = "local";
-        cloud.error = null;
+      }else{
+        stripPrivateForViewer();
+        cloud.status=cloud.publicLoaded?"synced":"viewer";
+        cloud.error=null;
         updateCloudHeader();
-        if(activeView === "more") renderMore();
+        render();
       }
     });
   }catch(err){
-    console.error("Firebase initialization failed", err);
-    cloud.loading = false;
-    cloud.error = err;
+    console.error("Firebase initialization failed",err);
+    cloud.loading=false;
+    cloud.error=err;
     updateCloudHeader();
   }
-}
-
-function isMobileBrowser(){
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
 async function toggleFirebaseAuth(){
@@ -403,41 +548,44 @@ async function toggleFirebaseAuth(){
     alert("Firebase SDK를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
     return;
   }
-
   if(cloud.user){
-    try{
-      await cloud.sdk.signOut(cloud.auth);
-    }catch(err){
-      alert("로그아웃하지 못했습니다.");
-    }
+    try{ await cloud.sdk.signOut(cloud.auth); }
+    catch(err){ alert("로그아웃하지 못했습니다."); }
     return;
   }
-
-  const provider = new cloud.sdk.GoogleAuthProvider();
+  const provider=new cloud.sdk.GoogleAuthProvider();
   try{
-    // GitHub Pages is not Firebase Hosting. Popup avoids redirect auth problems
-    // caused by third-party storage restrictions in modern Safari/Firefox/Chrome.
-    await cloud.sdk.signInWithPopup(cloud.auth, provider);
+    await cloud.sdk.signInWithPopup(cloud.auth,provider);
   }catch(err){
-    console.error("Google sign-in failed", err);
-    alert("Google 로그인에 실패했습니다. Firebase Authentication의 Google 제공자와 GitHub Pages 도메인 등록을 확인해주세요.");
+    console.error("Google sign-in failed",err);
+    alert("관리자 Google 로그인에 실패했습니다. Firebase Authentication 설정을 확인해주세요.");
   }
 }
 
 function openFirebaseSetupModal(){
   showModal(`
     <div class="modal-head">
-      <div><div class="eyebrow">FIREBASE</div><h2>클라우드 동기화 설정</h2></div>
+      <div><div class="eyebrow">FIREBASE</div><h2>공용 일정 동기화 설정</h2></div>
       <button class="btn small" data-close-modal>닫기</button>
     </div>
     <div class="stack">
-      <div class="item"><div class="item-title">1. Firebase 프로젝트와 Web App 생성</div><div class="item-meta">Firebase Console에서 Web App을 등록하고 firebaseConfig 값을 복사합니다.</div></div>
-      <div class="item"><div class="item-title">2. firebase-config.js 수정</div><div class="item-meta">프로젝트 루트의 firebase-config.js에 받은 설정값을 넣습니다.</div></div>
-      <div class="item"><div class="item-title">3. Google 로그인 활성화</div><div class="item-meta">Authentication → Sign-in method에서 Google을 켜고, Authorized domains에 GitHub Pages 도메인을 추가합니다.</div></div>
-      <div class="item"><div class="item-title">4. Firestore와 보안 규칙 설정</div><div class="item-meta">Firestore Database를 만든 뒤 이 프로젝트의 firestore.rules 내용을 Rules 탭에 적용합니다.</div></div>
+      <div class="item"><div class="item-title">1. 공개 일정 문서</div><div class="item-meta">로그인하지 않은 사용자는 publicTrips/main 문서를 읽어 최신 일정을 봅니다.</div></div>
+      <div class="item"><div class="item-title">2. 관리자 권한</div><div class="item-meta">Firestore에 admins/{관리자UID} 문서를 한 번 생성하면 그 Google 계정만 공용 일정을 수정할 수 있습니다.</div></div>
+      <div class="item"><div class="item-title">3. Security Rules</div><div class="item-meta">firestore.rules를 Firebase Console의 Rules 탭에 적용해야 합니다.</div></div>
     </div>
-    <div class="note" style="margin-top:14px">상세 과정은 FIREBASE_SETUP.md에 정리해 두었습니다.</div>
+    <div class="note" style="margin-top:14px">상세 과정은 FIREBASE_SETUP.md의 “공용 읽기 + 관리자 쓰기” 항목을 확인하세요.</div>
   `);
+}
+
+function showAdminGate(title="관리자 전용"){
+  document.getElementById("view").innerHTML=`
+    <div class="card">
+      <div class="card-head"><h3>${escapeHtml(title)}</h3><span class="badge">로그인 필요</span></div>
+      <p class="muted">이 화면의 개인 관리 정보는 공개하지 않습니다. 일정 수정이 필요한 경우 관리자 Google 계정으로 로그인하세요.</p>
+      <button class="btn primary" id="adminGateLoginBtn">관리자 로그인</button>
+    </div>`;
+  const b=document.getElementById("adminGateLoginBtn");
+  if(b) b.onclick=toggleFirebaseAuth;
 }
 
 function tripData(){
@@ -600,14 +748,14 @@ function renderHome(){
       ${(()=>{const t=tripData();return statCard("여행 기간",`${tripDays()}일`,`${t.start.slice(5).replace("-","/")} → ${t.end.slice(5).replace("-","/")}`)})()}
       ${(()=>{const x=cityStayStats("호이안");const r=x.start&&x.end?`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`:"—";return statCard("호이안 숙소",`${x.nights}박`,r)})()}
       ${(()=>{const x=cityStayStats("다낭");const r=x.start&&x.end?`${x.start.slice(5).replace("-","/")} → ${x.end.slice(5).replace("-","/")}`:"—";return statCard("다낭 숙소",`${x.nights}박`,r)})()}
-      ${statCard("기록 지출",money(spent),`${krw(spent)} · 예산 ${money(state.budget)}`)}
+      ${canEditShared()?statCard("기록 지출",money(spent),`${krw(spent)} · 예산 ${money(state.budget)}`):statCard("공용 일정","실시간","로그인 없이 최신 일정 자동 반영")}
     </div>
 
     <div class="quick-today">
       <div class="card">
         <div class="card-head">
           <div><div class="eyebrow">${fmtDate(d,true)}</div><h2>${cityForDate(d)} · 오늘 운영안</h2></div>
-          <button class="btn small" data-edit-day="${d}">수정</button>
+          ${canEditShared()?`<button class="btn small" data-edit-day="${d}">수정</button>`:`<span class="badge good">👁️ 보기 전용</span>`}
         </div>
         <div class="stack">
           ${planOptionHTML(d,"A",p.a,p.selected)}
@@ -642,7 +790,7 @@ function renderHome(){
     </div>
   `;
   bindDayEditButtons();
-  document.querySelectorAll("[data-select-plan]").forEach(btn=>btn.onclick=()=>{
+  if(canEditShared()) document.querySelectorAll("[data-select-plan]").forEach(btn=>btn.onclick=()=>{
     const [date,sel]=btn.dataset.selectPlan.split("|");
     state.dayPlans[date].selected=sel; save(); renderHome();
   });
@@ -659,7 +807,7 @@ function planOptionHTML(date,label,text,selected){
         <div class="plan-label">${label==="A"?"☀️ A PLAN":label==="B"?"🌤️ B PLAN":"🌧️ C PLAN"}</div>
         <div class="plan-title">${escapeHtml(text || "미정")}</div>
       </div>
-      <button class="btn small ${selected===label?"primary":""}" data-select-plan="${date}|${label}">${selected===label?"선택됨":"선택"}</button>
+      ${canEditShared()?`<button class="btn small ${selected===label?"primary":""}" data-select-plan="${date}|${label}">${selected===label?"선택됨":"선택"}</button>`:`<span class="badge ${selected===label?"good":""}">${selected===label?"현재 일정":"대안"}</span>`}
     </div>
   </div>`;
 }
@@ -678,7 +826,7 @@ function nextLockedEvents(){
 }
 
 function renderCalendar(){
-  setHeader("전체 일정","A/B/C 일정은 수정·선택할 수 있고, 선택된 일정은 다른 날짜로 드래그 이동할 수 있습니다.");
+  setHeader("전체 일정",canEditShared()?"관리자는 A/B/C 일정을 수정·선택하고 날짜 간 이동할 수 있습니다.":"관리자가 등록한 최신 일정이 로그인 없이 자동 반영됩니다.");
   const months=[["2026-11","2026년 11월"],["2026-12","2026년 12월"]];
   document.getElementById("view").innerHTML=`
     <div class="row between wrap" style="margin-bottom:14px">
@@ -690,7 +838,7 @@ function renderCalendar(){
     ${months.map(([m,title])=>monthCalendar(m,title)).join("")}
   `;
   bindDayEditButtons();
-  bindDragDrop();
+  if(canEditShared()) bindDragDrop();
   document.getElementById("openAgendaBtn").onclick=()=>openDayModal(nearestTripDate());
 }
 function monthCalendar(month,title){
@@ -711,8 +859,8 @@ function monthCalendar(month,title){
       <div class="day-city">${stay?`${escapeHtml(stay.city)} · ${stayLink(stay)}`:escapeHtml(cityForDate(d))}</div>
       ${lockedEvents(d).map(e=>`<div class="event locked">${renderWithStayLinks(e)}</div>`).join("")}
       ${w?`<div class="event weather">${weatherEmoji(w.code)} ${w.min}–${w.max}℃ · ${w.rain}%</div>`:""}
-      ${plan?`<div class="event editable" draggable="true" data-drag-date="${d}">✎ ${escapeHtml(plan)}</div>`:""}
-      <div class="day-actions"><button data-edit-day="${d}">${plan?"일정 수정":"+ 일정 추가"}</button></div>
+      ${plan?`<div class="event editable" ${canEditShared()?`draggable="true" data-drag-date="${d}"`:""}>${canEditShared()?"✎":"•"} ${escapeHtml(plan)}</div>`:""}
+      <div class="day-actions"><button data-edit-day="${d}">${canEditShared()?(plan?"일정 수정":"+ 일정 추가"):"상세 보기"}</button></div>
     </div>`);
   }
   return `<div class="calendar-month"><div class="month-title">${title}</div>
@@ -748,6 +896,17 @@ function babyState(date){
   return state.baby[date] || {formula:false,solids:false,nap:false,diaper:false,clothes:false,carrier:false};
 }
 function openDayModal(date){
+  if(!canEditShared()){
+    const p=state.dayPlans[date] || {a:"",b:"",c:"",selected:"A"}, w=weatherFor(date), note=state.dayNotes?.[date]||"";
+    showModal(`
+      <div class="modal-head"><div><div class="eyebrow">${fmtDate(date,true)} · ${cityForDate(date)}</div><h2>일정 상세</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+      ${lockedEvents(date).length?`<div class="note">${lockedEvents(date).map(renderWithStayLinks).join(" · ")}</div>`:""}
+      ${w?`<div class="item" style="margin-top:12px"><div class="item-title">${weatherEmoji(w.code)} 예상 ${w.min}–${w.max}℃</div><div class="item-meta">최대 강수확률 ${w.rain}%</div></div>`:""}
+      <div class="stack" style="margin-top:14px">${planOptionHTML(date,"A",p.a,p.selected)}${planOptionHTML(date,"B",p.b,p.selected)}${planOptionHTML(date,"C",p.c,p.selected)}</div>
+      ${note?`<div class="item" style="margin-top:12px"><div class="item-title">메모</div><div class="item-meta">${escapeHtml(note)}</div></div>`:""}
+    `);
+    return;
+  }
   if(!state.dayPlans[date]) state.dayPlans[date]={a:"",b:"",c:"",selected:"A"};
   const p=state.dayPlans[date], b=babyState(date), w=weatherFor(date);
   showModal(`
@@ -805,13 +964,13 @@ function babyCheck(key,label,checked){
 }
 
 function renderPlaces(){
-  setHeader("장소 보관함","장소를 저장하고 지도에서 바로 검색하거나 특정 날짜 일정에 붙일 수 있습니다.");
+  setHeader("장소 보관함",canEditShared()?"장소를 저장하고 지도에서 바로 검색하거나 특정 날짜 일정에 붙일 수 있습니다.":"관리자가 등록한 장소를 지도에서 바로 확인할 수 있습니다.");
   const cats=["전체","호이안","다낭","관광","식당","카페","마트","아기","의료","약국"];
   const items=state.places.filter(p=>placeFilter==="전체"||p.city===placeFilter||p.cat===placeFilter);
   document.getElementById("view").innerHTML=`
     <div class="row between wrap" style="margin-bottom:14px">
       <div class="filters">${cats.map(c=>`<button class="btn small ${placeFilter===c?"active":""}" data-place-filter="${c}">${c}</button>`).join("")}</div>
-      <button class="btn primary" id="addPlaceBtn">+ 장소 추가</button>
+      ${canEditShared()?`<button class="btn primary" id="addPlaceBtn">+ 장소 추가</button>`:`<span class="badge good">👁️ 보기 전용</span>`}
     </div>
     <div class="place-grid">
       ${items.map(p=>`<div class="place-card">
@@ -820,18 +979,20 @@ function renderPlaces(){
         <div class="item-meta">${escapeHtml(p.note||"")}</div></div>
         <div class="row wrap">
           <a class="btn small" target="_blank" rel="noopener" href="${mapUrl(p)}">🗺 지도</a>
-          <button class="btn small" data-place-to-day="${p.id}">일정에 추가</button>
-          <button class="btn small danger" data-delete-place="${p.id}">삭제</button>
+          ${canEditShared()?`<button class="btn small" data-place-to-day="${p.id}">일정에 추가</button><button class="btn small danger" data-delete-place="${p.id}">삭제</button>`:""}
         </div>
       </div>`).join("") || `<div class="card muted small">해당 조건의 장소가 없습니다.</div>`}
     </div>
   `;
   document.querySelectorAll("[data-place-filter]").forEach(b=>b.onclick=()=>{placeFilter=b.dataset.placeFilter;renderPlaces();});
-  document.getElementById("addPlaceBtn").onclick=openAddPlaceModal;
-  document.querySelectorAll("[data-delete-place]").forEach(b=>b.onclick=()=>{
-    state.places=state.places.filter(p=>p.id!==b.dataset.deletePlace);save();renderPlaces();
-  });
-  document.querySelectorAll("[data-place-to-day]").forEach(b=>b.onclick=()=>openPlaceToDayModal(b.dataset.placeToDay));
+  const addPlaceBtn=document.getElementById("addPlaceBtn");
+  if(addPlaceBtn) addPlaceBtn.onclick=openAddPlaceModal;
+  if(canEditShared()){
+    document.querySelectorAll("[data-delete-place]").forEach(b=>b.onclick=()=>{
+      state.places=state.places.filter(p=>p.id!==b.dataset.deletePlace);save();renderPlaces();
+    });
+    document.querySelectorAll("[data-place-to-day]").forEach(b=>b.onclick=()=>openPlaceToDayModal(b.dataset.placeToDay));
+  }
 }
 function mapUrl(p){
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.map||`${p.name} ${p.city}`)}`;
@@ -882,26 +1043,26 @@ function openPlaceToDayModal(id){
 
 function renderBookings(){
   const t=tripData();
-  setHeader("예약","항공·숙소·동행은 여기서 수정하면 Firebase에 저장되고 전체 일정에 즉시 반영됩니다.");
+  setHeader("예약",canEditShared()?"항공·숙소·동행은 여기서 수정하면 공용 일정에 즉시 반영됩니다.":"항공·숙소·동행의 최신 정보를 로그인 없이 확인할 수 있습니다.");
   document.getElementById("view").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-head"><div><h3>✈ 항공</h3><div class="small muted">일정 화면에서는 고정</div></div><button class="btn primary small" id="addFlightBtn">+ 항공</button></div>
+        <div class="card-head"><div><h3>✈ 항공</h3><div class="small muted">일정 화면에서는 고정</div></div>${canEditShared()?`<button class="btn primary small" id="addFlightBtn">+ 항공</button>`:`<span class="badge good">👁️ 보기 전용</span>`}</div>
         <div class="stack">${t.flights.length?t.flights.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(f=>`<div class="item">
           <div class="row between wrap"><div><div class="item-title">${escapeHtml(f.type||"")} · ${escapeHtml(f.flight)}</div><div class="item-meta">${fmtDate(f.date,true)}<br>${escapeHtml(f.route||"")}<br>${escapeHtml(f.time||"")}</div></div><span class="lock-badge">🔒 일정 고정</span></div>
-          <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-flight="${f.id}">수정</button><button class="btn small danger" data-delete-flight="${f.id}">삭제</button></div>
+          ${canEditShared()?`<div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-flight="${f.id}">수정</button><button class="btn small danger" data-delete-flight="${f.id}">삭제</button></div>`:""}
         </div>`).join(""):`<div class="muted small">등록된 항공편이 없습니다.</div>`}</div>
       </div>
       <div class="card">
-        <div class="card-head"><div><h3>🏨 숙소</h3><div class="small muted">체크인·체크아웃은 일정 화면에서 고정</div></div><button class="btn primary small" id="addStayBtn">+ 숙소</button></div>
+        <div class="card-head"><div><h3>🏨 숙소</h3><div class="small muted">체크인·체크아웃은 일정 화면에서 고정</div></div>${canEditShared()?`<button class="btn primary small" id="addStayBtn">+ 숙소</button>`:`<span class="badge good">👁️ 보기 전용</span>`}</div>
         <div class="stack">${t.stays.length?t.stays.slice().sort((a,b)=>a.in.localeCompare(b.in)).map(stayBookingItem).join(""):`<div class="muted small">등록된 숙소가 없습니다.</div>`}</div>
         <hr>
-        <div class="card-head"><div><h3>👪 동행</h3><div class="small muted">가족 등 별도 숙박 일정</div></div><button class="btn small" id="addCompanionBtn">+ 동행</button></div>
+        <div class="card-head"><div><h3>👪 동행</h3><div class="small muted">가족 등 별도 숙박 일정</div></div>${canEditShared()?`<button class="btn small" id="addCompanionBtn">+ 동행</button>`:""}</div>
         <div class="stack">${(t.companions||[]).length?t.companions.map(companionBookingItem).join(""):`<div class="muted small">등록된 동행 일정이 없습니다.</div>`}</div>
       </div>
     </div>
-    <div class="section card">
-      <div class="card-head"><div><h3>추가 예약</h3><div class="small muted">식당, 픽업, 투어, 마사지 등</div></div><button class="btn primary" id="addBookingBtn">+ 예약 추가</button></div>
+    ${canEditShared()?`<div class="section card">
+      <div class="card-head"><div><h3>추가 예약</h3><div class="small muted">예약번호·결제정보는 관리자에게만 표시됩니다.</div></div><button class="btn primary" id="addBookingBtn">+ 예약 추가</button></div>
       <div class="stack">
         ${state.customBookings.length ? state.customBookings.map(b=>`<div class="item">
           <div class="row between wrap"><div><div class="item-title">${escapeHtml(b.name)}</div><div class="item-meta">${b.date||"날짜 미정"} · ${escapeHtml(b.type||"기타")} · ${escapeHtml(b.status||"예약")}</div></div><strong>${b.amount?money(b.amount):""}</strong></div>
@@ -910,32 +1071,35 @@ function renderBookings(){
           <div style="margin-top:8px"><button class="btn small danger" data-delete-booking="${b.id}">삭제</button></div>
         </div>`).join("") : `<div class="muted small">추가 예약이 없습니다.</div>`}
       </div>
-    </div>
+    </div>`:`<div class="section note">추가 예약의 예약번호·결제정보는 개인정보 보호를 위해 로그인 없는 화면에는 표시하지 않습니다.</div>`}
   `;
-  document.getElementById("addFlightBtn").onclick=()=>openFlightModal();
-  document.getElementById("addStayBtn").onclick=()=>openStayModal();
-  document.getElementById("addCompanionBtn").onclick=()=>openCompanionModal();
-  document.getElementById("addBookingBtn").onclick=openBookingModal;
-  document.querySelectorAll("[data-edit-flight]").forEach(b=>b.onclick=()=>openFlightModal(b.dataset.editFlight));
-  document.querySelectorAll("[data-delete-flight]").forEach(b=>b.onclick=()=>deleteFlight(b.dataset.deleteFlight));
-  document.querySelectorAll("[data-edit-stay]").forEach(b=>b.onclick=()=>openStayModal(b.dataset.editStay));
-  document.querySelectorAll("[data-delete-stay]").forEach(b=>b.onclick=()=>deleteStay(b.dataset.deleteStay));
-  document.querySelectorAll("[data-edit-companion]").forEach(b=>b.onclick=()=>openCompanionModal(b.dataset.editCompanion));
-  document.querySelectorAll("[data-delete-companion]").forEach(b=>b.onclick=()=>deleteCompanion(b.dataset.deleteCompanion));
-  document.querySelectorAll("[data-delete-booking]").forEach(b=>b.onclick=()=>{
-    state.customBookings=state.customBookings.filter(x=>x.id!==b.dataset.deleteBooking);save();renderBookings();
-  });
+  const addFlightBtn=document.getElementById("addFlightBtn");
+  if(canEditShared()){
+    if(addFlightBtn) addFlightBtn.onclick=()=>openFlightModal();
+    const addStayBtn=document.getElementById("addStayBtn"); if(addStayBtn) addStayBtn.onclick=()=>openStayModal();
+    const addCompanionBtn=document.getElementById("addCompanionBtn"); if(addCompanionBtn) addCompanionBtn.onclick=()=>openCompanionModal();
+    const addBookingBtn=document.getElementById("addBookingBtn"); if(addBookingBtn) addBookingBtn.onclick=openBookingModal;
+    document.querySelectorAll("[data-edit-flight]").forEach(b=>b.onclick=()=>openFlightModal(b.dataset.editFlight));
+    document.querySelectorAll("[data-delete-flight]").forEach(b=>b.onclick=()=>deleteFlight(b.dataset.deleteFlight));
+    document.querySelectorAll("[data-edit-stay]").forEach(b=>b.onclick=()=>openStayModal(b.dataset.editStay));
+    document.querySelectorAll("[data-delete-stay]").forEach(b=>b.onclick=()=>deleteStay(b.dataset.deleteStay));
+    document.querySelectorAll("[data-edit-companion]").forEach(b=>b.onclick=()=>openCompanionModal(b.dataset.editCompanion));
+    document.querySelectorAll("[data-delete-companion]").forEach(b=>b.onclick=()=>deleteCompanion(b.dataset.deleteCompanion));
+    document.querySelectorAll("[data-delete-booking]").forEach(b=>b.onclick=()=>{
+      state.customBookings=state.customBookings.filter(x=>x.id!==b.dataset.deleteBooking);save();renderBookings();
+    });
+  }
 }
 function stayBookingItem(s){
   return `<div class="item">
     <div class="row between wrap"><div><div class="item-title">${stayLink(s)}</div><div class="item-meta">${escapeHtml(s.city)} · ${s.in} → ${s.out} · ${nightsBetween(s.in,s.out)}박</div></div><span class="lock-badge">🔒 일정 고정</span></div>
-    <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-stay="${s.id}">수정</button><button class="btn small danger" data-delete-stay="${s.id}">삭제</button></div>
+    ${canEditShared()?`<div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-stay="${s.id}">수정</button><button class="btn small danger" data-delete-stay="${s.id}">삭제</button></div>`:""}
   </div>`;
 }
 function companionBookingItem(c){
   const s=companionStay(c);
   return `<div class="item"><div class="item-title">${escapeHtml(c.label)} · ${s?stayLink(s):"숙소 미지정"}</div><div class="item-meta">${c.in} → ${c.out}</div>
-    <div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-companion="${c.id}">수정</button><button class="btn small danger" data-delete-companion="${c.id}">삭제</button></div></div>`;
+    ${canEditShared()?`<div class="row wrap" style="margin-top:8px"><button class="btn small" data-edit-companion="${c.id}">수정</button><button class="btn small danger" data-delete-companion="${c.id}">삭제</button></div>`:""}</div>`;
 }
 function makeId(prefix){ return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`; }
 function openFlightModal(id=null){
@@ -1057,7 +1221,8 @@ function openBookingModal(){
 }
 
 function renderMoney(){
-  setHeader("비용","VND로 입력하면 설정된 환율로 원화 환산액을 함께 표시합니다.");
+  setHeader("비용",canEditShared()?"VND로 입력하면 설정된 환율로 원화 환산액을 함께 표시합니다.":"비용 정보는 관리자에게만 표시됩니다.");
+  if(!canEditShared()){ showAdminGate("💰 비용 · 관리자 전용"); return; }
   const spent=state.expenses.reduce((s,e)=>s+Number(e.amount||0),0);
   const pct=Math.min(100,Math.round(spent/state.budget*100));
   const byCat={};
@@ -1124,7 +1289,8 @@ function openBudgetModal(){
 }
 
 function renderMore(){
-  setHeader("준비 · 생활","준비물, 아기 루틴, 긴급정보와 데이터 백업을 관리합니다.");
+  setHeader("준비 · 생활",canEditShared()?"준비물, 아기 루틴, 긴급정보와 데이터 백업을 관리합니다.":"개인 준비 정보는 관리자에게만 표시됩니다.");
+  if(!canEditShared()){ showAdminGate("🧳 준비 · 관리자 전용"); return; }
   document.getElementById("view").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
@@ -1143,10 +1309,10 @@ function renderMore(){
           <div class="card-head"><h3>☁️ Firebase 동기화</h3><span class="badge ${cloud.user?"good":""}">${escapeHtml(cloudStatusLabel())}</span></div>
           <p class="small muted">${
             cloud.user
-              ? `${escapeHtml(cloud.user.email || cloud.user.displayName || "Google 계정")}으로 로그인되어 있습니다. Mac과 iPhone에서 같은 Google 계정으로 로그인하면 가장 최근 수정본이 자동 동기화됩니다.`
+              ? `${escapeHtml(cloud.user.email || cloud.user.displayName || "Google 계정")} 관리자 계정입니다. 수정한 공용 일정은 로그인하지 않은 방문자에게도 실시간 반영됩니다.`
               : cloud.configured
-                ? "Firebase 설정은 완료되었습니다. Google 로그인 후 클라우드 동기화를 시작할 수 있습니다."
-                : "현재는 이 기기의 localStorage에 저장됩니다. firebase-config.js를 설정하면 Google 계정 기반 자동 동기화를 사용할 수 있습니다."
+                ? "로그인하지 않아도 공용 일정은 자동으로 최신 상태를 읽습니다. 수정은 관리자 로그인 후 가능합니다."
+                : "Firebase 설정 전에는 이 기기의 localStorage만 사용합니다."
           }</p>
           <div class="row wrap">
             <button class="btn primary" id="moreAuthBtn">${cloud.user?"Google 로그아웃":cloud.configured?"Google 로그인":"Firebase 설정 방법"}</button>
