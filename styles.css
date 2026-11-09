@@ -276,3 +276,132 @@ button.summary-card{cursor:pointer}.summary-card>div{display:grid;gap:1px}.summa
 @media(max-width:760px){
   body.home-portal .main{padding:0 0 82px}.portal-hero{height:225px}.portal-tabs{display:none}.portal-hero-copy{left:18px;top:72px}.portal-hero-copy h1{font-size:32px}.hero-kicker{font-size:11px}.hero-meta{font-size:10px;gap:8px}.portal-hero-actions{right:12px;top:12px;gap:4px}.hero-action,.hero-user{padding:6px 8px;font-size:9px}.portal-tabs{bottom:10px;height:52px;border-radius:19px;padding:4px}.home-tab{font-size:9px;gap:3px;flex-direction:column}.home-tab span{font-size:15px}.portal-content{width:calc(100% - 20px);margin-top:10px}.visual-feature-grid{grid-template-columns:1fr;gap:9px}.feature-card{min-height:185px;border-radius:17px}.feature-badge{left:14px;top:13px;padding:7px 10px;font-size:10px}.feature-copy{left:15px;right:15px;bottom:14px}.feature-copy h2{font-size:20px}.feature-copy>div{font-size:10px}.portal-summary-row{grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.summary-card{min-height:78px;padding:9px;grid-template-columns:36px 1fr auto;gap:7px;border-radius:13px}.summary-icon{width:34px;height:34px;font-size:17px}.summary-card b{font-size:9px}.summary-card strong{font-size:12px}.summary-card small{font-size:7px}.progress-summary{grid-template-columns:40px 1fr}.progress-ring{width:40px;height:40px}.progress-ring:after{width:29px;height:29px}.progress-ring b{font-size:8px}.portal-panel{padding:13px;border-radius:16px}.panel-title-row{margin-bottom:10px}.panel-title-row h2{font-size:14px}.panel-icon{font-size:16px}.stay-timeline-panel{margin-top:8px}.stay-timeline{grid-template-columns:repeat(6,135px);gap:4px}.stay-step-thumb{height:48px}.stay-step-card strong{font-size:10px;min-height:24px}.stay-step-card>span{font-size:8px}.stay-step-card small{font-size:7px}.portal-bottom-grid{gap:8px;margin-top:8px}.today-list-row{font-size:10px;min-height:39px;grid-template-columns:19px 22px 1fr}.weather-visual{min-height:205px}.weather-big{margin-top:22px;gap:9px}.weather-big>span{font-size:42px}.weather-big>strong{font-size:34px}.weather-big b{font-size:9px}.weather-big small{font-size:8px}.portal-quick-actions{grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px}.portal-quick-actions button{padding:10px 4px;border-radius:13px}.portal-quick-actions span{font-size:19px}.portal-quick-actions b{font-size:9px}
 }
+
+/* =========================================================
+   Portal theme v12 — calendar / places / bookings / money / more
+   ========================================================= */
+body:not(.home-portal){background:#f3f6f8;color:#10212c}
+body:not(.home-portal) .app-shell{display:block;min-height:100vh}
+body:not(.home-portal) .sidebar{
+  position:sticky;top:0;z-index:35;width:100%;height:auto;padding:10px max(18px,calc((100vw - 1180px)/2));
+  background:linear-gradient(90deg,#082f49,#0b4662 55%,#123e54);display:flex;align-items:center;gap:28px;
+  box-shadow:0 8px 24px rgba(5,35,54,.16)
+}
+body:not(.home-portal) .brand{display:flex;align-items:center;gap:9px;margin:0;color:white;white-space:nowrap}
+body:not(.home-portal) .brand-kicker{display:none}
+body:not(.home-portal) .brand strong{font-size:18px;letter-spacing:-.03em}
+body:not(.home-portal) .brand span:last-child{font-size:10px;opacity:.78}
+body:not(.home-portal) .sidebar .nav{display:flex;align-items:center;gap:4px;flex:1}
+body:not(.home-portal) .sidebar .nav button{padding:9px 15px;border-radius:999px;text-align:center;font-size:12px;font-weight:800;color:#eaf6fb}
+body:not(.home-portal) .sidebar .nav button.active{background:#ff6b43;color:#fff;box-shadow:0 5px 13px rgba(255,107,67,.24)}
+body:not(.home-portal) .sidebar .nav button:hover{background:rgba(255,255,255,.13)}
+body:not(.home-portal) .sidebar-foot{display:none}
+body:not(.home-portal) .main{width:min(1180px,calc(100% - 36px));max-width:none;margin:0 auto;padding:18px 0 92px}
+body:not(.home-portal) .top-header{
+  position:relative;overflow:hidden;min-height:170px;margin:0 0 16px;padding:28px 30px;border-radius:24px;
+  color:white;background:#0d3851 url('./assets/hero-vietnam.svg') center 46%/cover no-repeat;
+  box-shadow:0 12px 30px rgba(14,52,74,.14);display:flex;align-items:flex-end
+}
+body:not(.home-portal) .top-header:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,31,50,.88),rgba(4,31,50,.52) 55%,rgba(4,31,50,.18))}
+body:not(.home-portal) .top-header>div{position:relative;z-index:2}
+body:not(.home-portal) .top-header .eyebrow{color:#bfe8da;font-size:11px}
+body:not(.home-portal) .top-header h1{color:white;font-size:34px;margin:4px 0 5px;text-shadow:0 2px 12px rgba(0,0,0,.28)}
+body:not(.home-portal) .top-header .subtitle{color:rgba(255,255,255,.82);font-size:12px}
+body:not(.home-portal) .top-actions{position:absolute;z-index:3;right:20px;top:20px;display:flex;gap:7px}
+body:not(.home-portal) .top-actions .btn{background:rgba(5,45,70,.82);border-color:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:8px 12px;font-size:11px;backdrop-filter:blur(8px)}
+body:not(.home-portal) .top-actions .btn.primary{background:#ff6b43;border-color:#ff6b43}
+body:not(.home-portal) #view{min-height:360px}
+body:not(.home-portal) .card,body:not(.home-portal) .portal-panel{border-color:#dfe5e9;border-radius:20px;box-shadow:0 7px 22px rgba(18,47,63,.055)}
+body:not(.home-portal) .card-head h3{font-size:16px;color:#132a38}
+body:not(.home-portal) .btn{border-radius:999px;font-weight:750}
+body:not(.home-portal) .btn.primary{background:#ff6b43;border-color:#ff6b43}
+body:not(.home-portal) .badge.good,body:not(.home-portal) .lock-badge{background:#e4f5ef;color:#147b61}
+body:not(.home-portal) .badge.warn{background:#fff0e9;color:#c75534}
+
+/* Page title icons */
+body[data-view="calendar"] #pageTitle:before{content:"📅 ";}
+body[data-view="places"] #pageTitle:before{content:"📍 ";}
+body[data-view="bookings"] #pageTitle:before{content:"🎫 ";}
+body[data-view="money"] #pageTitle:before{content:"🪙 ";}
+body[data-view="more"] #pageTitle:before{content:"🧳 ";}
+
+/* Calendar */
+body[data-view="calendar"] #view>.row:first-child{padding:13px 16px;background:#fff;border:1px solid #dfe5e9;border-radius:16px;box-shadow:0 5px 16px rgba(18,47,63,.045)}
+body[data-view="calendar"] .calendar-month{background:#fff;border:1px solid #dfe5e9;border-radius:22px;padding:18px;margin:0 0 16px;box-shadow:0 7px 22px rgba(18,47,63,.05)}
+body[data-view="calendar"] .month-title{color:#103b57;font-size:21px;display:flex;align-items:center;gap:8px}
+body[data-view="calendar"] .month-title:before{content:"🗓️"}
+body[data-view="calendar"] .dow{font-weight:800;color:#69808e;background:#f6f9fa;border-radius:8px}
+body[data-view="calendar"] .day{border-color:#e2e7ea;border-radius:14px;background:linear-gradient(180deg,#fff,#fcfdfe);box-shadow:0 2px 8px rgba(25,55,72,.025);transition:.15s}
+body[data-view="calendar"] .day:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(25,55,72,.08);border-color:#cddae1}
+body[data-view="calendar"] .day-date{color:#123c56;font-size:14px}
+body[data-view="calendar"] .event.locked{background:#e4f3ff;color:#175f89;border-left:3px solid #4ca8dd}
+body[data-view="calendar"] .event.editable{background:#fff0e9;color:#9c4c31;border-left:3px solid #ff754e}
+body[data-view="calendar"] .event.weather{background:#eef8f5;color:#23735e;border-left:3px solid #59b69d}
+body[data-view="calendar"] .day-actions button{color:#e65c38;font-weight:800}
+
+/* Places */
+body[data-view="places"] .filters{background:#fff;border:1px solid #dfe5e9;border-radius:18px;padding:8px;box-shadow:0 5px 16px rgba(18,47,63,.045)}
+body[data-view="places"] .filters .btn{background:#f5f8f9;border:0;color:#526a78}
+body[data-view="places"] .filters .btn.active{background:#0d4c6b;color:white;box-shadow:0 5px 12px rgba(13,76,107,.18)}
+body[data-view="places"] .place-grid{gap:14px}
+body[data-view="places"] .place-card{position:relative;overflow:hidden;min-height:176px;border-radius:20px;padding:18px;border-color:#dfe5e9;box-shadow:0 7px 20px rgba(18,47,63,.055);background:linear-gradient(150deg,#fff 0%,#fbfdfe 70%,#eef8f5 100%)}
+body[data-view="places"] .place-card:before{content:"";position:absolute;right:-30px;top:-36px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,#dff3ed,rgba(223,243,237,0) 68%)}
+body[data-view="places"] .place-card .name{position:relative;font-size:18px;color:#12364c;margin-top:14px!important}
+body[data-view="places"] .place-card .badge{background:#e4f3ff;color:#225f82}
+body[data-view="places"] .place-card .row:last-child{margin-top:auto}
+body[data-view="places"] .place-card a.btn{background:#0d4c6b;color:white;border-color:#0d4c6b}
+
+/* Bookings */
+body[data-view="bookings"] .grid.grid-2>.card{position:relative;overflow:hidden}
+body[data-view="bookings"] .grid.grid-2>.card:first-child:before{content:"✈️";position:absolute;right:24px;top:18px;font-size:42px;opacity:.12}
+body[data-view="bookings"] .grid.grid-2>.card:nth-child(2):before{content:"🏨";position:absolute;right:24px;top:18px;font-size:42px;opacity:.12}
+body[data-view="bookings"] .item{border-color:#e3e8eb;border-radius:15px;background:linear-gradient(180deg,#fff,#fcfdfe)}
+body[data-view="bookings"] .item-title{color:#12364c;font-size:14px}
+body[data-view="bookings"] .section.card{border-top:4px solid #ff6b43}
+
+/* Money */
+body[data-view="money"] .grid.grid-4>.card{position:relative;overflow:hidden;min-height:125px}
+body[data-view="money"] .grid.grid-4>.card:nth-child(1){background:linear-gradient(145deg,#0d4c6b,#176d8d);color:white}
+body[data-view="money"] .grid.grid-4>.card:nth-child(2){background:linear-gradient(145deg,#fff0e9,#fff);border-color:#ffd8ca}
+body[data-view="money"] .grid.grid-4>.card:nth-child(3){background:linear-gradient(145deg,#e9f7f1,#fff);border-color:#d1ede2}
+body[data-view="money"] .grid.grid-4>.card:nth-child(4){background:linear-gradient(145deg,#eef5ff,#fff);border-color:#d8e6f6}
+body[data-view="money"] .grid.grid-4>.card:nth-child(1) .stat-label,body[data-view="money"] .grid.grid-4>.card:nth-child(1) .stat-sub{color:rgba(255,255,255,.78)}
+body[data-view="money"] .progress{height:13px;background:#edf0f1}
+body[data-view="money"] .progress>div{background:linear-gradient(90deg,#ff6b43,#ff9a58)}
+body[data-view="money"] .grid.grid-2>.card:first-child{border-top:4px solid #42a988}
+body[data-view="money"] .grid.grid-2>.card:last-child{border-top:4px solid #4c9bd5}
+body[data-view="money"] .item{border:0;background:#f7fafb}
+
+/* More / preparation */
+body[data-view="more"] .grid.grid-2>.card:first-child{background:linear-gradient(160deg,#fff,#f7fbfa)}
+body[data-view="more"] .checklist{gap:8px}
+body[data-view="more"] .checklist label{border:0;background:#fff;box-shadow:0 3px 12px rgba(18,47,63,.055);border-left:4px solid #55b498}
+body[data-view="more"] .checklist input{accent-color:#ff6b43;transform:scale(1.1)}
+body[data-view="more"] .stack>.card:nth-child(1){border-top:4px solid #ee6a54}
+body[data-view="more"] .stack>.card:nth-child(2){border-top:4px solid #4da0d2}
+body[data-view="more"] .stack>.card:nth-child(3){border-top:4px solid #6bb18d}
+
+/* Admin gate in portal style */
+body:not(.home-portal) #view>.card:only-child{max-width:760px;margin:0 auto;padding:24px}
+
+@media(max-width:900px){
+  body:not(.home-portal) .sidebar{gap:12px;padding-left:18px;padding-right:18px}
+  body:not(.home-portal) .brand span:last-child{display:none}
+  body:not(.home-portal) .sidebar .nav button{padding:8px 10px;font-size:11px}
+}
+@media(max-width:760px){
+  body:not(.home-portal) .sidebar{display:none}
+  body:not(.home-portal) .main{width:calc(100% - 20px);padding:10px 0 82px}
+  body:not(.home-portal) .top-header{min-height:145px;padding:20px 16px;border-radius:18px;align-items:flex-end}
+  body:not(.home-portal) .top-header h1{font-size:25px;margin-bottom:3px}
+  body:not(.home-portal) .top-header .subtitle{font-size:10px;max-width:75%}
+  body:not(.home-portal) .top-actions{right:10px;top:10px;display:grid;grid-template-columns:repeat(2,max-content);gap:4px;width:auto}
+  body:not(.home-portal) .top-actions .btn{padding:5px 7px;font-size:8px}
+  body[data-view="calendar"] .calendar-month{padding:11px;border-radius:17px}
+  body[data-view="calendar"] .month-title{font-size:17px}
+  body[data-view="calendar"] .day{padding:10px;margin-bottom:7px;border-radius:13px}
+  body[data-view="places"] .filters{padding:6px;border-radius:14px}
+  body[data-view="places"] .place-card{min-height:150px;padding:14px;border-radius:16px}
+  body[data-view="places"] .place-card .name{font-size:16px}
+  body[data-view="money"] .grid.grid-4>.card{min-height:100px}
+}

@@ -803,6 +803,7 @@ function setHeader(title,subtitle){
 
 function render(){
   document.body.classList.toggle("home-portal",activeView==="home");
+  document.body.dataset.view=activeView;
   bindNavigation();
   const renders={home:renderHome,calendar:renderCalendar,places:renderPlaces,bookings:renderBookings,money:renderMoney,more:renderMore};
   renders[activeView]();
