@@ -1,6 +1,6 @@
 
-const CACHE="danang-hoian-planner-v10";
-const ASSETS=["./","./index.html","./styles.css","./app.js","./manifest.json","./firebase-config.js"];
+const CACHE="danang-hoian-planner-v11";
+const ASSETS=["./","./index.html","./styles.css","./app.js","./manifest.json","./firebase-config.js","./assets/hero-vietnam.svg","./assets/stay-resort.svg","./assets/next-lanterns.svg","./assets/weather-danang.svg"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
 self.addEventListener("fetch",e=>{

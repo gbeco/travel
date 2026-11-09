@@ -241,7 +241,12 @@ function cloudStatusLabel(){
 function updateCloudHeader(){
   const statusBtn = document.getElementById("cloudStatusBtn");
   const authBtn = document.getElementById("authBtn");
-  if(statusBtn) statusBtn.textContent = cloudStatusLabel();
+  const homeStatusBtn = document.getElementById("homeCloudStatusBtn");
+  const homeAuthBtn = document.getElementById("homeAuthBtn");
+  const label=cloudStatusLabel();
+  if(statusBtn) statusBtn.textContent = label;
+  if(homeStatusBtn) homeStatusBtn.textContent = canEditShared() ? "↻ 동기화됨" : (cloud.publicLoaded ? "↻ 일정 최신" : "↻ 연결 중");
+  const authText=!cloud.configured ? "Firebase 설정" : cloud.user ? (canEditShared()?"관리자":"계정") : "로그인";
   if(authBtn){
     if(!cloud.configured){
       authBtn.textContent = "Firebase 설정";
@@ -253,9 +258,14 @@ function updateCloudHeader(){
       authBtn.title = "일정 수정은 관리자 로그인 후 가능합니다.";
     }
   }
+  if(homeAuthBtn){
+    homeAuthBtn.textContent=authText;
+    homeAuthBtn.title=cloud.user ? (cloud.user.email||cloud.user.displayName||"") : "관리자 로그인";
+  }
   document.querySelectorAll("[data-action='export-data']").forEach(btn=>{
     if(btn.closest('.top-actions')) btn.style.display = canEditShared() ? "" : "none";
   });
+  document.querySelectorAll("[data-home-export]").forEach(btn=>btn.style.display=canEditShared()?"":"none");
 }
 
 function publicPayload(){
@@ -792,6 +802,7 @@ function setHeader(title,subtitle){
 }
 
 function render(){
+  document.body.classList.toggle("home-portal",activeView==="home");
   bindNavigation();
   const renders={home:renderHome,calendar:renderCalendar,places:renderPlaces,bookings:renderBookings,money:renderMoney,more:renderMore};
   renders[activeView]();
@@ -818,162 +829,150 @@ function weatherEmoji(code){
 }
 
 function tripProgressInfo(){
-  const t=tripData();
-  const today=new Date(); today.setHours(0,0,0,0);
-  const start=parseDate(t.start), end=parseDate(t.end);
-  const total=tripDays();
-  if(today<start){
-    const d=Math.ceil((start-today)/86400000);
-    return {pct:0,day:0,total,label:`출발 D-${d}`,remaining:total};
-  }
-  if(today>end) return {pct:100,day:total,total,label:'여행 완료',remaining:0};
+  const t=tripData(), today=new Date(); today.setHours(0,0,0,0);
+  const start=parseDate(t.start), end=parseDate(t.end), total=tripDays();
+  if(today<start) return {day:0,total,pct:0,label:tripStatusText()};
+  if(today>end) return {day:total,total,pct:100,label:"여행 완료"};
   const day=Math.floor((today-start)/86400000)+1;
-  return {pct:Math.round(day/total*100),day,total,label:`여행 ${day}일차`,remaining:Math.max(0,total-day)};
+  return {day,total,pct:Math.max(0,Math.min(100,Math.round(day/total*100))),label:`여행 ${day}일차`};
 }
-
-function stayForHome(date){
+function nextStayAfter(date){
   const stays=tripData().stays.slice().sort((a,b)=>a.in.localeCompare(b.in));
-  let idx=stays.findIndex(s=>date>=s.in && date<s.out);
-  if(idx<0){
-    if(date<stays[0]?.in) idx=0;
-    else idx=stays.length-1;
-  }
-  return {current:stays[idx]||null,next:stays[idx+1]||null,index:idx,stays};
+  return stays.find(s=>s.in>date) || null;
 }
-
-function homeMapHTML(activeIndex){
+function stayNights(stay){ return Math.max(0,Math.round((parseDate(stay.out)-parseDate(stay.in))/86400000)); }
+function homeNavItems(){
+  return NAV.map(([id,icon,label])=>`<button class="home-tab ${id==="home"?"active":""}" data-home-view="${id}"><span>${icon}</span><b>${label}</b></button>`).join("");
+}
+function homeStayTimeline(activeDate){
   const stays=tripData().stays.slice().sort((a,b)=>a.in.localeCompare(b.in));
-  const coords=[
-    [82,76],[76,69],[69,60],[62,46],[58,31],[55,20]
-  ];
-  return `<div class="travel-map" aria-label="호이안에서 다낭으로 이동하는 숙소 여정 지도">
-    <div class="map-sun"></div>
-    <div class="map-sea"></div>
-    <div class="map-land"></div>
-    <div class="map-river map-river-1"></div>
-    <div class="map-river map-river-2"></div>
-    <div class="map-city map-city-danang"><strong>다낭</strong><span>Đà Nẵng</span></div>
-    <div class="map-city map-city-hoian"><strong>호이안</strong><span>Hội An</span></div>
-    <svg class="map-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M82 76 C79 72,78 70,76 69 S72 63,69 60 S65 52,62 46 S59 36,58 31 S56 23,55 20" />
-    </svg>
-    <div class="map-airport">✈️<span>DAD</span></div>
-    ${stays.map((stay,i)=>{
-      const [x,y]=coords[i]||[50,50];
-      const cls=i<activeIndex?'done':i===activeIndex?'active':'future';
-      return `<a class="map-stay-marker ${cls}" style="--x:${x}%;--y:${y}%" href="${stayMapUrl(stay)}" target="_blank" rel="noopener noreferrer" title="${attr(stay.name)} · Google Maps">
-        <span class="map-pin">🛏️</span><span class="map-stay-label"><b>${escapeHtml(stay.name)}</b><small>${stay.in.slice(5).replace('-','.')}–${stay.out.slice(5).replace('-','.')}</small></span>
-      </a>`;
-    }).join('')}
-    <div class="map-caption"><span>🌴 호이안</span><span>→</span><span>🌊 다낭</span><b>${tripDays()}일 가족여행</b></div>
-  </div>`;
+  return stays.map((s,i)=>{
+    const active=activeDate>=s.in && activeDate<s.out;
+    const done=activeDate>=s.out;
+    const thumbEmoji=["🌿","🌴","🏡","🏙️","🌺","🌊"][i%6];
+    return `<div class="stay-step ${active?"active":""} ${done?"done":""}">
+      <div class="stay-step-node">${active?"●":done?"✓":"○"}</div>
+      <a class="stay-step-card" href="${stayMapUrl(s)}" target="_blank" rel="noopener noreferrer">
+        <div class="stay-step-thumb thumb-${(i%6)+1}"><span>${thumbEmoji}</span></div>
+        <strong>${escapeHtml(s.name)}</strong>
+        <span>${s.in.slice(5).replace("-",".")} ~ ${s.out.slice(5).replace("-",".")}</span>
+        <small>${stayNights(s)}박 · ${escapeHtml(s.city)}</small>
+      </a>
+      ${(tripData().companions||[]).filter(c=>c.stayId===s.id).map(c=>`<div class="stay-companion-chip">👪 ${escapeHtml(c.label)} ${c.in.slice(5).replace("-",".")}~${c.out.slice(5).replace("-",".")}</div>`).join("")}
+    </div>`;
+  }).join("");
 }
-
-function homeSummaryTile(icon,label,value,sub,view){
-  return `<button class="home-summary-tile" data-home-nav="${view}">
-    <span class="home-summary-icon">${icon}</span>
-    <span><small>${label}</small><strong>${value}</strong><em>${sub}</em></span>
-  </button>`;
-}
-
 function renderHome(){
+  setHeader("여행 홈","다낭·호이안 장기 여행을 한눈에 확인합니다.");
   const t=tripData();
-  setHeader("다낭 · 호이안 가족여행",`${fmtDate(t.start)} → ${fmtDate(t.end)} · ${tripDays()-1}박 ${tripDays()}일`);
   const d=nearestTripDate();
+  const stay=currentStay(d) || t.stays.slice().sort((a,b)=>a.in.localeCompare(b.in))[0] || null;
+  const nextStay=nextStayAfter(d);
   const p=state.dayPlans[d] || {a:"",b:"",c:"",selected:"A"};
-  const w=weatherFor(d);
   const progress=tripProgressInfo();
-  const stayInfo=stayForHome(d);
-  const stay=stayInfo.current;
-  const nextStay=stayInfo.next;
-  const companions=(t.companions||[]);
+  const w=weatherFor(d);
+  const city=cityForDate(d);
+  const companions=t.companions||[];
   const nextEvents=nextLockedEvents().slice(0,4);
-  const weatherText=w ? `${weatherEmoji(w.code)} ${w.min}–${w.max}℃` : "☁️ 예보 대기";
-  const companionText=companions.length?`${companions[0].label} ${companions[0].in.slice(5).replace('-','.')}–${companions[0].out.slice(5).replace('-','.')}`:"동행 일정 없음";
-  const flightText=(t.flights||[]).map(f=>f.flight).join(' / ');
+  const locked=lockedEvents(d);
+  const note=state.dayNotes[d]||"";
+  const selected=selectedPlan(d);
+  const cityStatsHoi=cityStayStats("호이안"), cityStatsDanang=cityStayStats("다낭");
+  const isBefore=parseDate(t.start)>new Date();
+  const currentLabel=isBefore?"첫 숙소":"현재 숙소";
+  const nextLabel=nextStay?"다음 숙소":"다음 일정";
+  const nextTitle=nextStay?nextStay.name:(nextEvents[0]?.event||"여행 마무리");
+  const nextMeta=nextStay?`${fmtDate(nextStay.in)} → ${escapeHtml(nextStay.city)}`:(nextEvents[0]?fmtDate(nextEvents[0].date,true):"");
 
   document.getElementById("view").innerHTML=`
-    <section class="home-visual-hero">
-      ${homeMapHTML(stayInfo.index)}
-      <div class="hero-overlay-card">
-        <div class="hero-trip-kicker">2026 VIETNAM · FAMILY TRIP</div>
-        <div class="hero-trip-title">호이안에서 다낭까지<br><strong>${tripDays()}일의 우리 여행</strong></div>
-        <div class="hero-trip-meta"><span>📅 ${t.start.replaceAll('-','.')} – ${t.end.replaceAll('-','.')}</span><span>👶 아기 동반</span></div>
-        <div class="hero-progress-row">
-          <div><b>${progress.label}</b><small>${progress.day}일 / ${progress.total}일</small></div>
-          <strong>${progress.pct}%</strong>
+    <div class="portal-home">
+      <section class="portal-hero">
+        <div class="portal-hero-shade"></div>
+        <div class="portal-hero-actions">
+          <button id="homeCloudStatusBtn" class="hero-action">↻ 일정 최신</button>
+          <button id="homeWeatherBtnTop" class="hero-action">☀ 날씨</button>
+          <button class="hero-action" data-home-export>⇧ 백업</button>
+          <button id="homeAuthBtn" class="hero-user">로그인</button>
         </div>
-        <div class="hero-progress"><i style="width:${progress.pct}%"></i></div>
+        <div class="portal-hero-copy">
+          <span class="hero-kicker">2026 베트남 장기여행</span>
+          <h1>다낭 · 호이안</h1>
+          <div class="hero-meta"><span>🗓 ${fmtDate(t.start)} ~ ${fmtDate(t.end)}</span><span>총 ${tripDays()-1}박 ${tripDays()}일</span></div>
+        </div>
+        <nav class="portal-tabs">${homeNavItems()}</nav>
+      </section>
+
+      <div class="portal-content">
+        <section class="visual-feature-grid">
+          <article class="feature-card current-feature" style="background-image:linear-gradient(180deg,rgba(3,25,40,.05),rgba(3,25,40,.72)),url('./assets/stay-resort.svg')">
+            <span class="feature-badge navy">🛏 ${currentLabel}</span>
+            <div class="feature-copy">
+              <h2>${stay?stayLink(stay):"숙소 미정"}</h2>
+              <div>${stay?`📍 ${escapeHtml(stay.city)} &nbsp; · &nbsp; 🗓 ${fmtDate(stay.in)} ~ ${fmtDate(stay.out)} · ${stayNights(stay)}박`:""}</div>
+            </div>
+          </article>
+          <article class="feature-card next-feature" style="background-image:linear-gradient(180deg,rgba(47,17,13,.03),rgba(47,17,13,.72)),url('./assets/next-lanterns.svg')">
+            <span class="feature-badge coral">🗓 ${nextLabel}</span>
+            <div class="feature-copy">
+              <h2>${nextStay?stayLink(nextStay):renderWithStayLinks(nextTitle)}</h2>
+              <div>${nextMeta}</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="portal-summary-row">
+          <button class="summary-card" data-home-view="bookings"><span class="summary-icon blue">✈</span><div><b>항공편</b><strong>${t.flights.length}편</strong><small>${t.flights.map(f=>f.flight).join(' / ')}</small></div><i>›</i></button>
+          <button class="summary-card" data-home-view="bookings"><span class="summary-icon peach">🛏</span><div><b>숙소</b><strong>${t.stays.length}곳 · ${tripDays()-2}박</strong><small>호이안 ${cityStatsHoi.nights}박 · 다낭 ${cityStatsDanang.nights}박</small></div><i>›</i></button>
+          <button class="summary-card" data-home-view="bookings"><span class="summary-icon green">👥</span><div><b>동행</b><strong>${companions.length}건</strong><small>${companions.length?companions.map(c=>c.label).join(', '):'등록 없음'}</small></div><i>›</i></button>
+          <div class="summary-card progress-summary"><span class="progress-ring" style="--p:${progress.pct}"><b>${progress.pct}%</b></span><div><b>여행 진행률</b><strong>${progress.day}일 / ${progress.total}일</strong><small>${progress.label}</small></div></div>
+        </section>
+
+        <section class="portal-panel stay-timeline-panel">
+          <div class="panel-title-row"><div><span class="panel-icon">🛏</span><h2>숙소 일정 한눈에 보기</h2></div><button data-home-view="bookings">전체 일정 보기 ›</button></div>
+          <div class="stay-timeline">${homeStayTimeline(d)}</div>
+        </section>
+
+        <section class="portal-bottom-grid">
+          <article class="portal-panel today-panel">
+            <div class="panel-title-row"><div><span class="panel-icon">🗓</span><h2>오늘의 일정</h2><small>${fmtDate(d,true)}</small></div>${canEditShared()?`<button data-edit-day="${d}">수정 ›</button>`:`<button data-home-view="calendar">일정 보기 ›</button>`}</div>
+            <div class="today-list">
+              ${locked.map((e,i)=>`<div class="today-list-row"><span class="check-box">${i===0?'✓':''}</span><span class="today-emoji">${e.startsWith('✈')?'✈️':e.includes('체크')?'🛏':'👪'}</span><div>${renderWithStayLinks(e)}</div></div>`).join('')}
+              ${selected?`<div class="today-list-row accent"><span class="check-box"></span><span class="today-emoji">🚶</span><div>${escapeHtml(selected)}</div></div>`:''}
+              ${note?`<div class="today-list-row"><span class="check-box"></span><span class="today-emoji">📝</span><div>${escapeHtml(note)}</div></div>`:''}
+              ${!locked.length&&!selected&&!note?`<div class="today-empty">오늘 등록된 일정이 없습니다.</div>`:''}
+            </div>
+            <div class="plan-switch-row compact">
+              ${['A','B','C'].map(label=>{const txt=p[label.toLowerCase()]||'미정';return `<button class="plan-mini ${p.selected===label?'active':''}" ${canEditShared()?`data-select-plan="${d}|${label}"`:'disabled'}><b>${label}</b><span>${escapeHtml(txt)}</span></button>`}).join('')}
+            </div>
+          </article>
+
+          <article class="portal-panel weather-visual" style="background-image:linear-gradient(90deg,rgba(255,255,255,.97) 0%,rgba(255,255,255,.78) 45%,rgba(255,255,255,.12) 100%),url('./assets/weather-danang.svg')">
+            <div class="panel-title-row"><div><span class="panel-icon">⛅</span><h2>${escapeHtml(city)} 날씨</h2></div><button id="homeWeatherBtn">새로고침 ›</button></div>
+            ${w?`<div class="weather-big"><span>${weatherEmoji(w.code)}</span><strong>${w.max}°C</strong><div><b>최고 ${w.max}°C</b><b>최저 ${w.min}°C</b><small>강수확률 ${w.rain}%</small></div></div>`:`<div class="weather-big waiting"><span>🌤️</span><strong>예보 대기</strong><div><b>여행일이 가까워지면</b><small>최대 16일 예보가 표시됩니다.</small></div></div>`}
+          </article>
+        </section>
+
+        <section class="portal-quick-actions">
+          <button data-home-view="places"><span>📍</span><b>장소 보기</b></button>
+          <button data-home-view="more"><span>✅</span><b>준비물 체크</b></button>
+          <button data-home-view="bookings"><span>🎫</span><b>예약 정보</b></button>
+          <button data-home-view="money"><span>🪙</span><b>여행 경비</b></button>
+          <button data-home-view="calendar"><span>📅</span><b>전체 일정</b></button>
+          <button id="homeWeatherQuick"><span>☀️</span><b>날씨 확인</b></button>
+        </section>
       </div>
-    </section>
+    </div>`;
 
-    <section class="home-summary-grid">
-      ${homeSummaryTile('✈️','항공편',`${t.flights.length}편`,flightText||'—','bookings')}
-      ${homeSummaryTile('🛏️','숙소',`${t.stays.length}곳`,`${cityStayStats('호이안').nights}박 호이안 · ${cityStayStats('다낭').nights}박 다낭`,'bookings')}
-      ${homeSummaryTile('👪','동행',companions.length?`${companions.length}건`:'없음',companionText,'bookings')}
-      ${homeSummaryTile('🗓️','여행 진행률',`${progress.pct}%`,progress.day?`${progress.day}일 / ${progress.total}일`:`남은 일정 ${progress.total}일`,'calendar')}
-    </section>
-
-    <section class="home-main-grid">
-      <div class="card home-stay-card">
-        <div class="card-head"><div><div class="eyebrow">${stayInfo.index===0 && progress.day===0?'첫 숙소':'현재 숙소'}</div><h2>${stay?stayLink(stay):'숙소 없음'}</h2></div><span class="home-weather-pill">${weatherText}</span></div>
-        ${stay?`<div class="stay-visual-band"><div class="stay-visual-icon">🏝️</div><div><b>${escapeHtml(stay.city)}</b><span>${fmtDate(stay.in)} → ${fmtDate(stay.out)} · ${nightsBetween(stay.in,stay.out)}박</span></div></div>`:''}
-        <div class="home-next-stay">
-          <span>다음 숙소</span>
-          ${nextStay?`<b>${stayLink(nextStay)}</b><small>${fmtDate(nextStay.in)} 체크인</small>`:`<b>귀국 일정</b><small>${fmtDate(t.end)}</small>`}
-        </div>
-      </div>
-
-      <div class="card home-progress-card">
-        <div class="card-head"><div><div class="eyebrow">TRIP PROGRESS</div><h2>여행 진행률</h2></div><strong class="progress-number">${progress.pct}%</strong></div>
-        <div class="home-big-progress"><i style="width:${progress.pct}%"></i></div>
-        <div class="home-progress-meta"><span>${progress.day}일 / ${progress.total}일</span><span>${progress.remaining}일 남음</span></div>
-        <div class="mini-stat-row"><span><b>🛏️ ${t.stays.length}</b><small>숙소</small></span><span><b>✈️ ${t.flights.length}</b><small>항공</small></span><span><b>👪 ${companions.length}</b><small>동행</small></span><span><b>📍 ${state.places.length}</b><small>장소</small></span></div>
-      </div>
-    </section>
-
-    <section class="home-main-grid home-lower-grid">
-      <div class="card home-today-card">
-        <div class="card-head">
-          <div><div class="eyebrow">${fmtDate(d,true)}</div><h2>오늘의 일정</h2></div>
-          ${canEditShared()?`<button class="btn small" data-edit-day="${d}">✎ 일정 수정</button>`:`<span class="badge good">👁️ 보기 전용</span>`}
-        </div>
-        <div class="today-timeline">
-          ${lockedEvents(d).map((e,i)=>`<div class="today-event fixed"><span>${i===0?'🔒':'•'}</span><div>${renderWithStayLinks(e)}</div></div>`).join('')}
-          <div class="today-event main"><span>🌴</span><div><b>${escapeHtml(selectedPlan(d)||'자유 일정')}</b><small>${p.selected||'A'} PLAN</small></div></div>
-          ${state.dayNotes[d]?`<div class="today-event note-line"><span>📝</span><div>${escapeHtml(state.dayNotes[d])}</div></div>`:''}
-        </div>
-        <div class="plan-switch-row">
-          ${['A','B','C'].map(label=>`<button class="plan-mini ${p.selected===label?'active':''}" ${canEditShared()?`data-select-plan="${d}|${label}"`:'disabled'}><b>${label}</b><span>${escapeHtml(p[label.toLowerCase()]||'미정')}</span></button>`).join('')}
-        </div>
-      </div>
-
-      <div class="card home-upcoming-card">
-        <div class="card-head"><div><div class="eyebrow">UPCOMING</div><h2>주요 일정 미리보기</h2></div><button class="btn small" data-home-nav="calendar">전체 보기</button></div>
-        <div class="upcoming-list">
-          ${nextEvents.map(x=>`<div class="upcoming-row"><time>${fmtDate(x.date)}</time><div>${renderWithStayLinks(x.event)}</div></div>`).join('') || '<div class="muted small">남은 고정 일정이 없습니다.</div>'}
-        </div>
-      </div>
-    </section>
-
-    <section class="home-quick-actions">
-      <button data-home-nav="places"><span>📍</span><b>장소 보기</b><small>${state.places.length}곳 저장</small></button>
-      <button data-home-nav="more"><span>✅</span><b>준비물 체크</b><small>여행 준비</small></button>
-      <button data-home-nav="bookings"><span>🎫</span><b>예약 정보</b><small>항공 · 숙소 · 동행</small></button>
-      <button data-home-nav="money"><span>🪙</span><b>여행 경비</b><small>${canEditShared()?money(state.expenses.reduce((s,e)=>s+Number(e.amount||0),0)):'관리자 전용'}</small></button>
-      <button id="homeWeatherBtn"><span>${w?weatherEmoji(w.code):'🌤️'}</span><b>날씨 확인</b><small>${cityForDate(d)} ${w?`${w.min}–${w.max}℃`:'새로고침'}</small></button>
-    </section>
-  `;
-
+  document.querySelectorAll('[data-home-view]').forEach(btn=>btn.onclick=()=>{activeView=btn.dataset.homeView;render();window.scrollTo({top:0,behavior:'smooth'});});
   bindDayEditButtons();
-  if(canEditShared()) document.querySelectorAll('[data-select-plan]').forEach(btn=>btn.onclick=()=>{
-    const [date,sel]=btn.dataset.selectPlan.split('|');
-    state.dayPlans[date].selected=sel; save(); renderHome();
-  });
-  document.querySelectorAll('[data-home-nav]').forEach(btn=>btn.onclick=()=>{
-    activeView=btn.dataset.homeNav; render(); window.scrollTo({top:0,behavior:'smooth'});
-  });
-  const wb=document.getElementById('homeWeatherBtn'); if(wb) wb.onclick=refreshWeather;
+  if(canEditShared()) document.querySelectorAll('[data-select-plan]').forEach(btn=>btn.onclick=()=>{const [date,sel]=btn.dataset.selectPlan.split('|');state.dayPlans[date].selected=sel;save();renderHome();});
+  const weatherTop=document.getElementById('homeWeatherBtnTop'); if(weatherTop) weatherTop.onclick=refreshWeather;
+  const weatherBtn=document.getElementById('homeWeatherBtn'); if(weatherBtn) weatherBtn.onclick=refreshWeather;
+  const weatherQuick=document.getElementById('homeWeatherQuick'); if(weatherQuick) weatherQuick.onclick=refreshWeather;
+  const auth=document.getElementById('homeAuthBtn'); if(auth) auth.onclick=toggleFirebaseAuth;
+  const cloudBtn=document.getElementById('homeCloudStatusBtn'); if(cloudBtn) cloudBtn.onclick=()=>document.getElementById('cloudStatusBtn')?.click();
+  document.querySelectorAll('[data-home-export]').forEach(b=>b.onclick=exportData);
+  updateCloudHeader();
 }
 
 function statCard(label,value,sub){
