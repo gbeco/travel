@@ -903,7 +903,7 @@ function bindNavigation(){
   document.getElementById("desktopNav").innerHTML=navHTML(false);
   document.getElementById("mobileNav").innerHTML=navHTML(true);
   document.querySelectorAll("[data-view]").forEach(btn=>{
-    btn.onclick=()=>{ activeView=btn.dataset.view; render(); window.scrollTo({top:0,behavior:"smooth"}); };
+    btn.onclick=()=>{ activeView=btn.dataset.view; render({preserveScroll:false}); window.scrollTo({top:0,behavior:"smooth"}); };
   });
 }
 
@@ -913,12 +913,28 @@ function setHeader(title,subtitle){
   document.getElementById("pageSubtitle").textContent=subtitle;
 }
 
-function render(){
+function restoreScrollPosition(y){
+  const top=Math.max(0,Number(y)||0);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    window.scrollTo({top,left:0,behavior:"auto"});
+  }));
+}
+
+function rerenderPreservingScroll(renderFn){
+  const y=window.scrollY;
+  renderFn();
+  restoreScrollPosition(y);
+}
+
+function render(options={}){
+  const preserveScroll=options.preserveScroll!==false;
+  const y=preserveScroll?window.scrollY:0;
   document.body.classList.toggle("home-portal",activeView==="home");
   document.body.dataset.view=activeView;
   bindNavigation();
   const renders={home:renderHome,calendar:renderCalendar,places:renderPlaces,bookings:renderBookings,money:renderMoney,more:renderMore};
   renders[activeView]();
+  if(preserveScroll) restoreScrollPosition(y);
 }
 
 function nearestTripDate(){
@@ -1076,9 +1092,9 @@ function renderHome(){
       </div>
     </div>`;
 
-  document.querySelectorAll('[data-home-view]').forEach(btn=>btn.onclick=()=>{activeView=btn.dataset.homeView;render();window.scrollTo({top:0,behavior:'smooth'});});
+  document.querySelectorAll('[data-home-view]').forEach(btn=>btn.onclick=()=>{activeView=btn.dataset.homeView;render({preserveScroll:false});window.scrollTo({top:0,behavior:'smooth'});});
   bindDayEditButtons();
-  if(canEditShared()) document.querySelectorAll('[data-select-plan]').forEach(btn=>btn.onclick=()=>{const [date,sel]=btn.dataset.selectPlan.split('|');state.dayPlans[date].selected=sel;save();renderHome();});
+  if(canEditShared()) document.querySelectorAll('[data-select-plan]').forEach(btn=>btn.onclick=()=>{const [date,sel]=btn.dataset.selectPlan.split('|');state.dayPlans[date].selected=sel;save();rerenderPreservingScroll(renderHome);});
   const weatherTop=document.getElementById('homeWeatherBtnTop'); if(weatherTop) weatherTop.onclick=refreshWeather;
   const weatherBtn=document.getElementById('homeWeatherBtn'); if(weatherBtn) weatherBtn.onclick=refreshWeather;
   const weatherQuick=document.getElementById('homeWeatherQuick'); if(weatherQuick) weatherQuick.onclick=refreshWeather;
@@ -1175,7 +1191,7 @@ function bindDragDrop(){
       const tmp=state.dayPlans[target];
       state.dayPlans[target]=state.dayPlans[source];
       if(tmp) state.dayPlans[source]=tmp; else delete state.dayPlans[source];
-      save();renderCalendar();
+      save();rerenderPreservingScroll(renderCalendar);
     };
   });
 }
@@ -1243,11 +1259,11 @@ function openDayModal(date){
     state.dayNotes[date]=document.getElementById("dayNote").value.trim();
     state.baby[date]={};
     document.querySelectorAll("[data-baby-key]").forEach(x=>state.baby[date][x.dataset.babyKey]=x.checked);
-    save();closeModal();render();
+    save();closeModal({restore:false});render();
   };
   document.getElementById("clearDayBtn").onclick=()=>{
     delete state.dayPlans[date]; delete state.dayNotes[date]; delete state.baby[date];
-    save();closeModal();render();
+    save();closeModal({restore:false});render();
   };
 }
 function babyCheck(key,label,checked){
@@ -1275,12 +1291,12 @@ function renderPlaces(){
       </div>`).join("") || `<div class="card muted small">해당 조건의 장소가 없습니다.</div>`}
     </div>
   `;
-  document.querySelectorAll("[data-place-filter]").forEach(b=>b.onclick=()=>{placeFilter=b.dataset.placeFilter;renderPlaces();});
+  document.querySelectorAll("[data-place-filter]").forEach(b=>b.onclick=()=>{placeFilter=b.dataset.placeFilter;rerenderPreservingScroll(renderPlaces);});
   const addPlaceBtn=document.getElementById("addPlaceBtn");
   if(addPlaceBtn) addPlaceBtn.onclick=openAddPlaceModal;
   if(canEditShared()){
     document.querySelectorAll("[data-delete-place]").forEach(b=>b.onclick=()=>{
-      state.places=state.places.filter(p=>p.id!==b.dataset.deletePlace);save();renderPlaces();
+      state.places=state.places.filter(p=>p.id!==b.dataset.deletePlace);save();rerenderPreservingScroll(renderPlaces);
     });
     document.querySelectorAll("[data-place-to-day]").forEach(b=>b.onclick=()=>openPlaceToDayModal(b.dataset.placeToDay));
   }
@@ -1311,7 +1327,7 @@ function openAddPlaceModal(){
       note:document.getElementById("placeNote").value.trim(),
       map:document.getElementById("placeMap").value.trim()
     });
-    save();closeModal();renderPlaces();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderPlaces);
   };
 }
 function openPlaceToDayModal(id){
@@ -1377,7 +1393,7 @@ function renderBookings(){
     document.querySelectorAll("[data-edit-companion]").forEach(b=>b.onclick=()=>openCompanionModal(b.dataset.editCompanion));
     document.querySelectorAll("[data-delete-companion]").forEach(b=>b.onclick=()=>deleteCompanion(b.dataset.deleteCompanion));
     document.querySelectorAll("[data-delete-booking]").forEach(b=>b.onclick=()=>{
-      state.customBookings=state.customBookings.filter(x=>x.id!==b.dataset.deleteBooking);save();renderBookings();
+      state.customBookings=state.customBookings.filter(x=>x.id!==b.dataset.deleteBooking);save();rerenderPreservingScroll(renderBookings);
     });
   }
 }
@@ -1413,12 +1429,12 @@ function openFlightModal(id=null){
     const item={id:f?.id||makeId("flight"),type:document.getElementById("flightType").value.trim(),flight,date,route:document.getElementById("flightRoute").value.trim(),time:document.getElementById("flightTime").value.trim()};
     if(f) Object.assign(f,item); else t.flights.push(item);
     t.flights.sort((a,b)=>a.date.localeCompare(b.date));
-    save();closeModal();renderBookings();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderBookings);
   };
 }
 function deleteFlight(id){
   if(!confirm("이 항공편을 삭제할까요?")) return;
-  tripData().flights=tripData().flights.filter(x=>x.id!==id);save();renderBookings();
+  tripData().flights=tripData().flights.filter(x=>x.id!==id);save();rerenderPreservingScroll(renderBookings);
 }
 function openStayModal(id=null){
   const t=tripData();
@@ -1443,14 +1459,14 @@ function openStayModal(id=null){
     const item={id:s?.id||makeId("stay"),name,city,in:inn,out,mapQuery:document.getElementById("stayMapQuery").value.trim()};
     if(s) Object.assign(s,item); else t.stays.push(item);
     t.stays.sort((a,b)=>a.in.localeCompare(b.in));
-    save();closeModal();renderBookings();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderBookings);
   };
 }
 function deleteStay(id){
   const linked=(tripData().companions||[]).filter(c=>c.stayId===id);
   if(linked.length){alert(`이 숙소를 사용하는 동행 일정(${linked.map(x=>x.label).join(", ")})이 있어 먼저 동행 일정을 수정하거나 삭제해야 합니다.`);return;}
   if(!confirm("이 숙소를 삭제할까요? 체크인/체크아웃 고정 일정에서도 제거됩니다.")) return;
-  tripData().stays=tripData().stays.filter(x=>x.id!==id);save();renderBookings();
+  tripData().stays=tripData().stays.filter(x=>x.id!==id);save();rerenderPreservingScroll(renderBookings);
 }
 function openCompanionModal(id=null){
   const t=tripData();
@@ -1472,12 +1488,12 @@ function openCompanionModal(id=null){
     if(out<=inn){alert("종료일은 시작일 이후여야 합니다.");return;}
     const item={id:c?.id||makeId("companion"),label,stayId:document.getElementById("compStay").value,in:inn,out};
     if(c) Object.assign(c,item); else t.companions.push(item);
-    save();closeModal();renderBookings();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderBookings);
   };
 }
 function deleteCompanion(id){
   if(!confirm("이 동행 일정을 삭제할까요?")) return;
-  tripData().companions=tripData().companions.filter(x=>x.id!==id);save();renderBookings();
+  tripData().companions=tripData().companions.filter(x=>x.id!==id);save();rerenderPreservingScroll(renderBookings);
 }
 function openBookingModal(){
   const t=tripData();
@@ -1507,7 +1523,7 @@ function openBookingModal(){
       url:document.getElementById("bookUrl").value.trim(),
       note:document.getElementById("bookNote").value.trim()
     });
-    save();closeModal();renderBookings();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderBookings);
   };
 }
 
@@ -1541,7 +1557,7 @@ function renderMoney(){
   document.getElementById("expenseBtn").onclick=openExpenseModal;
   document.getElementById("budgetBtn").onclick=openBudgetModal;
   document.querySelectorAll("[data-delete-expense]").forEach(b=>b.onclick=()=>{
-    state.expenses=state.expenses.filter(e=>e.id!==b.dataset.deleteExpense);save();renderMoney();
+    state.expenses=state.expenses.filter(e=>e.id!==b.dataset.deleteExpense);save();rerenderPreservingScroll(renderMoney);
   });
 }
 function openExpenseModal(){
@@ -1559,7 +1575,7 @@ function openExpenseModal(){
     const name=document.getElementById("expName").value.trim(), amount=Number(document.getElementById("expAmount").value||0);
     if(!name||!amount)return;
     state.expenses.push({id:"e-"+Date.now(),date:document.getElementById("expDate").value,cat:document.getElementById("expCat").value,name,amount});
-    save();closeModal();renderMoney();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderMoney);
   };
 }
 function openBudgetModal(){
@@ -1575,7 +1591,7 @@ function openBudgetModal(){
   document.getElementById("saveBudgetBtn").onclick=()=>{
     state.budget=Number(document.getElementById("budgetValue").value||state.budget);
     state.krwRate=Number(document.getElementById("rateValue").value||state.krwRate);
-    save();closeModal();renderMoney();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderMoney);
   };
 }
 
@@ -1646,7 +1662,7 @@ function openPackingAddModal(section,group){
     if(!label)return;
     const id=`packing-${section}-${group}-${Date.now()}`;
     state.packing.groups[section][group].push({id,label});
-    save();closeModal();renderMore();
+    save();closeModal({restore:false});rerenderPreservingScroll(renderMore);
   };
 }
 
@@ -1736,16 +1752,21 @@ function renderMore(){
     const [section,group,id]=b.dataset.packingDelete.split("|");
     state.packing.groups[section][group]=state.packing.groups[section][group].filter(item=>item.id!==id);
     delete state.packing.checked[id];
-    save();renderMore();
+    save();rerenderPreservingScroll(renderMore);
   });
 }
 
+let modalScrollY=0;
 function showModal(html){
+  modalScrollY=window.scrollY;
   document.getElementById("modalRoot").innerHTML=`<div class="modal-backdrop"><div class="modal">${html}</div></div>`;
-  document.querySelectorAll("[data-close-modal]").forEach(b=>b.onclick=closeModal);
+  document.querySelectorAll("[data-close-modal]").forEach(b=>b.onclick=()=>closeModal());
   document.querySelector(".modal-backdrop").onclick=e=>{if(e.target.classList.contains("modal-backdrop"))closeModal();};
 }
-function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
+function closeModal(options={}){
+  document.getElementById("modalRoot").innerHTML="";
+  if(options.restore!==false) restoreScrollPosition(modalScrollY);
+}
 
 async function refreshWeather(){
   const btn=document.getElementById("weatherRefreshBtn");
@@ -1808,6 +1829,11 @@ function escapeHtml(v){
   return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 }
 function attr(v){ return escapeHtml(v); }
+
+
+if("scrollRestoration" in history){
+  history.scrollRestoration="manual";
+}
 
 document.getElementById("weatherRefreshBtn").onclick=refreshWeather;
 document.getElementById("authBtn").onclick=toggleFirebaseAuth;
