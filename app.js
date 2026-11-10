@@ -1604,9 +1604,11 @@ function packingGroupHTML(section,group){
       <span class="packing-count" data-packing-count="${section}|${group}">${done}/${items.length}</span>
     </div>
     <div class="packing-items">
-      ${items.length?items.map(item=>{const inputId=packingInputId(item.id);return `<div class="packing-item" data-packing-item="${attr(item.id)}">
-        <input id="${attr(inputId)}" type="checkbox" data-packing-check="${attr(item.id)}" data-packing-path="${section}|${group}" ${state.packing.checked?.[item.id]?"checked":""}>
-        <label class="packing-item-label" for="${attr(inputId)}">${escapeHtml(item.label)}</label>
+      ${items.length?items.map(item=>{const isChecked=!!state.packing.checked?.[item.id];return `<div class="packing-item ${isChecked?"is-checked":""}" data-packing-item="${attr(item.id)}">
+        <button type="button" class="packing-check-toggle ${isChecked?"is-checked":""}" data-packing-check="${attr(item.id)}" data-packing-path="${section}|${group}" role="checkbox" aria-checked="${isChecked?"true":"false"}" aria-label="${escapeHtml(item.label)} 체크">
+          <span aria-hidden="true">✓</span>
+        </button>
+        <button type="button" class="packing-item-label" data-packing-label="${attr(item.id)}" data-packing-path="${section}|${group}">${escapeHtml(item.label)}</button>
         <button type="button" class="packing-delete" data-packing-delete="${section}|${group}|${attr(item.id)}" aria-label="삭제">×</button>
       </div>`}).join(""):`<div class="packing-empty">아직 등록된 준비물이 없습니다.</div>`}
     </div>
@@ -1697,14 +1699,33 @@ function renderMore(){
       </div>
     </div>
   `;
-  document.querySelectorAll("[data-packing-check]").forEach(c=>c.onchange=e=>{
-    e.stopPropagation();
-    const id=c.dataset.packingCheck;
-    const [section,group]=c.dataset.packingPath.split("|");
-    if(c.checked) state.packing.checked[id]=true;
+  function togglePackingItem(id,path){
+    const [section,group]=path.split("|");
+    const next=!state.packing.checked?.[id];
+    if(next) state.packing.checked[id]=true;
     else delete state.packing.checked[id];
+
+    document.querySelectorAll("[data-packing-check]").forEach(btn=>{
+      if(btn.dataset.packingCheck!==id) return;
+      btn.classList.toggle("is-checked",next);
+      btn.setAttribute("aria-checked",next?"true":"false");
+    });
+    document.querySelectorAll("[data-packing-item]").forEach(row=>{
+      if(row.dataset.packingItem===id) row.classList.toggle("is-checked",next);
+    });
+
     savePrivateOnly();
     updatePackingProgressUI(section,group);
+  }
+  document.querySelectorAll("[data-packing-check]").forEach(btn=>btn.onclick=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    togglePackingItem(btn.dataset.packingCheck,btn.dataset.packingPath);
+  });
+  document.querySelectorAll("[data-packing-label]").forEach(btn=>btn.onclick=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    togglePackingItem(btn.dataset.packingLabel,btn.dataset.packingPath);
   });
   document.querySelectorAll("[data-packing-add]").forEach(b=>b.onclick=()=>{
     const [section,group]=b.dataset.packingAdd.split("|");
@@ -1818,5 +1839,12 @@ updateCloudHeader();
 initFirebaseSync();
 
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+  window.addEventListener("load",async()=>{
+    try{
+      const reg=await navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"});
+      await reg.update();
+    }catch(err){
+      console.warn("Service worker registration failed",err);
+    }
+  });
 }
