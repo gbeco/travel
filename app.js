@@ -92,6 +92,52 @@ const DEFAULT_PLACES = [
   {id:"p15",city:"다낭",cat:"카페",name:"Login Coffee",priority:"○ 시간되면",note:"다낭 카페 후보",map:"Login Coffee Nguyen Van Thoai Da Nang"}
 ];
 
+const DEFAULT_PACKING = {
+  groups: {
+    checked: {
+      common: [
+        {id:"bag-common-toiletries",label:"세면도구"},
+        {id:"bag-common-laundry",label:"세탁용품"},
+        {id:"bag-common-packing",label:"여분 지퍼백 / 파우치"}
+      ],
+      parents: [
+        {id:"bag-parents-clothes",label:"부모 의류 / 속옷"},
+        {id:"bag-parents-swim",label:"수영복"},
+        {id:"bag-parents-cosmetics",label:"화장품 / 스킨케어"}
+      ],
+      hajin: [
+        {id:"bag-hajin-clothes",label:"하진 옷 / 잠옷"},
+        {id:"bag-hajin-diapers",label:"여분 기저귀"},
+        {id:"bag-hajin-toiletries",label:"아기 세면용품"},
+        {id:"bag-hajin-food",label:"여분 이유식 / 간식"}
+      ]
+    },
+    carry: {
+      common: [
+        {id:"carry-common-passport",label:"여권"},
+        {id:"carry-common-insurance",label:"여행자보험"},
+        {id:"carry-common-medicine",label:"상비약"},
+        {id:"carry-common-charger",label:"휴대폰 충전기 / 케이블"}
+      ],
+      parents: [
+        {id:"carry-parents-wallet",label:"지갑 / 카드 / 현금"},
+        {id:"carry-parents-medicine",label:"개인 복용약"},
+        {id:"carry-parents-earphones",label:"이어폰"}
+      ],
+      hajin: [
+        {id:"carry-hajin-formula",label:"아기 분유"},
+        {id:"carry-hajin-solids",label:"이유식"},
+        {id:"carry-hajin-diaper",label:"기저귀"},
+        {id:"carry-hajin-wipes",label:"물티슈"},
+        {id:"carry-hajin-clothes",label:"여벌 옷"},
+        {id:"carry-hajin-carrier",label:"유모차 / 아기띠"},
+        {id:"carry-hajin-bottle",label:"젖병 / 물병"}
+      ]
+    }
+  },
+  checked: {}
+};
+
 const DEFAULT_STATE = {
   trip: DEFAULT_TRIP,
   dayPlans: DEFAULT_DAY_PLANS,
@@ -102,6 +148,7 @@ const DEFAULT_STATE = {
   expenses: [],
   budget: 75000000,
   krwRate: 0.0524,
+  packing: DEFAULT_PACKING,
   checklist: ["여권","여행자보험","아기 분유","이유식","기저귀","물티슈","상비약","충전기","유모차/아기띠"],
   checked: {},
   weather: { fetchedAt:null, cities:{} },
@@ -109,6 +156,8 @@ const DEFAULT_STATE = {
 };
 
 let state = loadState();
+migratePackingData(state);
+persistLocal();
 let activeView = "home";
 let placeFilter = "전체";
 
@@ -186,6 +235,46 @@ function migrateCurrentItinerary(target){
   });
   target._meta.itineraryVersion=20261020;
   return changed;
+}
+
+const PACKING_DATA_VERSION = 20261110;
+const LEGACY_PACKING_MAP = {
+  "여권":"carry-common-passport",
+  "여행자보험":"carry-common-insurance",
+  "아기 분유":"carry-hajin-formula",
+  "이유식":"carry-hajin-solids",
+  "기저귀":"carry-hajin-diaper",
+  "물티슈":"carry-hajin-wipes",
+  "상비약":"carry-common-medicine",
+  "충전기":"carry-common-charger",
+  "유모차/아기띠":"carry-hajin-carrier"
+};
+
+function migratePackingData(target){
+  target._meta = target._meta || {};
+  if(Number(target._meta.packingVersion||0) >= PACKING_DATA_VERSION && target.packing) return false;
+
+  if(!target.packing || !target.packing.groups){
+    target.packing = clone(DEFAULT_PACKING);
+  }else{
+    target.packing = deepMerge(clone(DEFAULT_PACKING), target.packing);
+  }
+  target.packing.checked = target.packing.checked || {};
+
+  const legacy = Array.isArray(target.checklist) ? target.checklist : [];
+  const legacyChecked = target.checked || {};
+  legacy.forEach((label,index)=>{
+    let id=LEGACY_PACKING_MAP[label];
+    if(!id){
+      id=`legacy-packing-${index}`;
+      const exists=target.packing.groups.checked.common.some(x=>x.id===id || x.label===label);
+      if(!exists) target.packing.groups.checked.common.push({id,label});
+    }
+    if(legacyChecked[index]) target.packing.checked[id]=true;
+  });
+
+  target._meta.packingVersion=PACKING_DATA_VERSION;
+  return true;
 }
 
 const PUBLIC_TRIP_PATH = ["publicTrips", "main"];
@@ -332,6 +421,7 @@ function mergePrivateState(privateState){
   state = merged;
   migrateTripData(state);
   migrateCurrentItinerary(state);
+  migratePackingData(state);
   persistLocal();
 }
 
@@ -340,7 +430,7 @@ async function pushPrivateState(){
   try{
     const updatedAtClient = Number(state._meta?.updatedAt || Date.now());
     await cloud.sdk.setDoc(cloud.privateDocRef, {
-      schemaVersion: 6,
+      schemaVersion: 7,
       state,
       updatedAtClient,
       updatedAt: cloud.sdk.serverTimestamp()
@@ -1467,54 +1557,118 @@ function openBudgetModal(){
   };
 }
 
-function renderMore(){
-  setHeader("준비 · 생활",canEditShared()?"준비물, 아기 루틴, 긴급정보와 데이터 백업을 관리합니다.":"개인 준비 정보는 관리자에게만 표시됩니다.");
-  if(!canEditShared()){ showAdminGate("🧳 준비 · 관리자 전용"); return; }
-  document.getElementById("view").innerHTML=`
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="card-head"><h3>🧳 준비물</h3><button class="btn small" id="addCheckBtn">+ 추가</button></div>
-        <div class="stack checklist">${state.checklist.map((x,i)=>`<label><input type="checkbox" data-check-index="${i}" ${state.checked[i]?"checked":""}><span>${escapeHtml(x)}</span></label>`).join("")}</div>
+function packingGroupMeta(group){
+  return group==="common" ? ["공통","👨‍👩‍👦"] : group==="parents" ? ["부모","👫"] : ["하진","👶"];
+}
+function packingSectionMeta(section){
+  return section==="checked" ? ["수화물","🧳","캐리어에 넣을 짐"] : ["기내용","🎒","비행 중 바로 꺼내 쓸 짐"];
+}
+function packingProgress(section){
+  const groups=state.packing?.groups?.[section]||{};
+  const items=Object.values(groups).flat();
+  const done=items.filter(item=>state.packing.checked?.[item.id]).length;
+  return {done,total:items.length};
+}
+function packingGroupHTML(section,group){
+  const [label,icon]=packingGroupMeta(group);
+  const items=state.packing?.groups?.[section]?.[group]||[];
+  const done=items.filter(item=>state.packing.checked?.[item.id]).length;
+  return `<div class="packing-group packing-group-${group}">
+    <div class="packing-group-head">
+      <div><span class="packing-group-icon">${icon}</span><strong>${label}</strong></div>
+      <span class="packing-count">${done}/${items.length}</span>
+    </div>
+    <div class="packing-items">
+      ${items.length?items.map(item=>`<label class="packing-item">
+        <input type="checkbox" data-packing-check="${attr(item.id)}" ${state.packing.checked?.[item.id]?"checked":""}>
+        <span>${escapeHtml(item.label)}</span>
+        <button type="button" class="packing-delete" data-packing-delete="${section}|${group}|${attr(item.id)}" aria-label="삭제">×</button>
+      </label>`).join(""):`<div class="packing-empty">아직 등록된 준비물이 없습니다.</div>`}
+    </div>
+    <button class="btn small packing-add" data-packing-add="${section}|${group}">+ ${label} 준비물 추가</button>
+  </div>`;
+}
+function packingSectionHTML(section){
+  const [title,icon,desc]=packingSectionMeta(section);
+  const progress=packingProgress(section);
+  const pct=progress.total?Math.round(progress.done/progress.total*100):0;
+  return `<section class="card packing-section packing-section-${section}">
+    <div class="packing-section-head">
+      <div>
+        <div class="packing-title-row"><span class="packing-section-icon">${icon}</span><h2>${title}</h2></div>
+        <p>${desc}</p>
       </div>
-      <div class="stack">
-        <div class="card">
-          <div class="card-head"><h3>🚨 긴급 정보</h3></div>
-          <div class="stack">
-            <div class="item"><div class="item-title">베트남 긴급전화</div><div class="item-meta">구급 115 · 경찰 113 · 소방 114</div></div>
-            <div class="item"><div class="item-title">Vinmec Da Nang Hospital</div><div class="item-meta">다낭 소아 진료 후보 · 여행 중 최신 운영정보 확인</div></div>
-          </div>
+      <div class="packing-summary"><strong>${progress.done}</strong><span>/ ${progress.total}</span></div>
+    </div>
+    <div class="packing-progress"><div style="width:${pct}%"></div></div>
+    <div class="packing-groups">
+      ${packingGroupHTML(section,"common")}
+      ${packingGroupHTML(section,"parents")}
+      ${packingGroupHTML(section,"hajin")}
+    </div>
+  </section>`;
+}
+function openPackingAddModal(section,group){
+  const [sectionLabel]=packingSectionMeta(section);
+  const [groupLabel]=packingGroupMeta(group);
+  showModal(`<div class="modal-head"><div><div class="eyebrow">${sectionLabel} · ${groupLabel}</div><h2>준비물 추가</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+    <label class="field">항목<input id="newPackingItem" placeholder="예: 모자"></label>
+    <div class="modal-footer"><button class="btn primary" id="savePackingItem">추가</button></div>`);
+  document.getElementById("savePackingItem").onclick=()=>{
+    const label=document.getElementById("newPackingItem").value.trim();
+    if(!label)return;
+    const id=`packing-${section}-${group}-${Date.now()}`;
+    state.packing.groups[section][group].push({id,label});
+    save();closeModal();renderMore();
+  };
+}
+
+function renderMore(){
+  setHeader("준비 · 생활",canEditShared()?"짐 종류와 가족별로 나눠 준비물을 관리합니다.":"개인 준비 정보는 관리자에게만 표시됩니다.");
+  if(!canEditShared()){ showAdminGate("🧳 준비 · 관리자 전용"); return; }
+  migratePackingData(state);
+  document.getElementById("view").innerHTML=`
+    <div class="packing-page-intro">
+      <div><span class="badge good">36박 37일</span><h2>여행 준비 체크리스트</h2><p>수화물과 기내용을 나누고, 공통·부모·하진 준비물을 각각 체크하세요.</p></div>
+      <div class="packing-total">${(()=>{const a=packingProgress("checked"),b=packingProgress("carry");return `<strong>${a.done+b.done}</strong><span>/ ${a.total+b.total} 완료</span>`})()}</div>
+    </div>
+    <div class="packing-layout">
+      ${packingSectionHTML("checked")}
+      ${packingSectionHTML("carry")}
+    </div>
+    <div class="section grid grid-2 packing-support">
+      <div class="card emergency-card">
+        <div class="card-head"><h3>🚨 긴급 정보</h3></div>
+        <div class="stack">
+          <div class="item"><div class="item-title">베트남 긴급전화</div><div class="item-meta">구급 115 · 경찰 113 · 소방 114</div></div>
+          <div class="item"><div class="item-title">Vinmec Da Nang Hospital</div><div class="item-meta">다낭 소아 진료 후보 · 여행 중 최신 운영정보 확인</div></div>
         </div>
-        <div class="card">
-          <div class="card-head"><h3>☁️ Firebase 동기화</h3><span class="badge ${cloud.user?"good":""}">${escapeHtml(cloudStatusLabel())}</span></div>
-          <p class="small muted">${
-            cloud.user
-              ? `${escapeHtml(cloud.user.email || cloud.user.displayName || "Google 계정")} 관리자 계정입니다. 수정한 공용 일정은 로그인하지 않은 방문자에게도 실시간 반영됩니다.`
-              : cloud.configured
-                ? "로그인하지 않아도 공용 일정은 자동으로 최신 상태를 읽습니다. 수정은 관리자 로그인 후 가능합니다."
-                : "Firebase 설정 전에는 이 기기의 localStorage만 사용합니다."
-          }</p>
-          <div class="row wrap">
-            <button class="btn primary" id="moreAuthBtn">${cloud.user?"Google 로그아웃":cloud.configured?"Google 로그인":"Firebase 설정 방법"}</button>
-            <button class="btn" data-action="export-data">JSON 백업</button>
-            <button class="btn" data-action="import-data">JSON 복원</button>
-            <button class="btn danger" id="resetBtn">초기화</button>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h3>📱 설치형 웹앱</h3></div>
-          <p class="small muted">GitHub Pages에 올린 뒤 브라우저의 “홈 화면에 추가” 기능을 사용하면 앱처럼 열 수 있습니다. 기본 화면은 오프라인 캐시됩니다.</p>
+      </div>
+      <div class="card packing-tip-card">
+        <div class="card-head"><h3>✈️ 출발 전 마지막 확인</h3></div>
+        <div class="stack small">
+          <div class="item">여권 · 항공권 · 숙소 예약 확인</div>
+          <div class="item">기내용 아기 물품은 도착 지연에 대비해 여유분 준비</div>
+          <div class="item">보조배터리·액체류는 이용 항공사 기내 반입 규정 최종 확인</div>
         </div>
       </div>
     </div>
   `;
-  document.querySelectorAll("[data-check-index]").forEach(c=>c.onchange=()=>{state.checked[c.dataset.checkIndex]=c.checked;save();});
-  document.getElementById("addCheckBtn").onclick=()=>{
-    showModal(`<div class="modal-head"><h2>준비물 추가</h2><button class="btn small" data-close-modal>닫기</button></div><label class="field">항목<input id="newCheck"></label><div class="modal-footer"><button class="btn primary" id="saveCheck">추가</button></div>`);
-    document.getElementById("saveCheck").onclick=()=>{const v=document.getElementById("newCheck").value.trim();if(v){state.checklist.push(v);save();closeModal();renderMore();}};
-  };
-  document.getElementById("moreAuthBtn").onclick=toggleFirebaseAuth;
-  document.getElementById("resetBtn").onclick=()=>{if(confirm("사용자 데이터를 모두 초기화할까요?")){state=clone(DEFAULT_STATE);save();render();}};
-  bindDataActions();
+  document.querySelectorAll("[data-packing-check]").forEach(c=>c.onchange=()=>{
+    state.packing.checked[c.dataset.packingCheck]=c.checked;
+    save();renderMore();
+  });
+  document.querySelectorAll("[data-packing-add]").forEach(b=>b.onclick=()=>{
+    const [section,group]=b.dataset.packingAdd.split("|");
+    openPackingAddModal(section,group);
+  });
+  document.querySelectorAll("[data-packing-delete]").forEach(b=>b.onclick=e=>{
+    e.preventDefault();e.stopPropagation();
+    const [section,group,id]=b.dataset.packingDelete.split("|");
+    state.packing.groups[section][group]=state.packing.groups[section][group].filter(item=>item.id!==id);
+    delete state.packing.checked[id];
+    save();renderMore();
+  });
 }
 
 function showModal(html){
