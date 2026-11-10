@@ -411,3 +411,75 @@ body:not(.home-portal) #view>.card:only-child{max-width:760px;margin:0 auto;padd
 .weather-visual .panel-title-row>div{align-items:center;flex-wrap:wrap}
 .weather-visual .weather-date-label{flex-basis:100%;padding-left:34px}
 @media(max-width:760px){.weather-visual .weather-date-label{padding-left:0;margin-top:2px;font-size:10px}}
+
+/* v14 Preparation / packing redesign */
+body[data-view="more"] .packing-page-intro{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  margin-bottom:16px;padding:20px 22px;border-radius:22px;
+  background:linear-gradient(135deg,#0e4e6c 0%,#126d7a 58%,#42a88c 100%);
+  color:#fff;box-shadow:0 12px 30px rgba(13,76,107,.16);overflow:hidden;position:relative;
+}
+body[data-view="more"] .packing-page-intro:after{
+  content:"";position:absolute;right:-50px;top:-70px;width:210px;height:210px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.18),rgba(255,255,255,0) 68%);
+}
+body[data-view="more"] .packing-page-intro h2{margin:8px 0 4px;font-size:25px;letter-spacing:-.03em}
+body[data-view="more"] .packing-page-intro p{margin:0;color:rgba(255,255,255,.8);font-size:13px}
+body[data-view="more"] .packing-page-intro .badge{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.16)}
+body[data-view="more"] .packing-total{position:relative;z-index:1;min-width:118px;text-align:center;padding:12px 16px;border-radius:18px;background:rgba(255,255,255,.14);backdrop-filter:blur(8px)}
+body[data-view="more"] .packing-total strong{display:block;font-size:28px;line-height:1;font-weight:900}
+body[data-view="more"] .packing-total span{display:block;margin-top:5px;font-size:11px;color:rgba(255,255,255,.82)}
+body[data-view="more"] .packing-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+body[data-view="more"] .packing-section{padding:20px;border-radius:22px;overflow:hidden;position:relative}
+body[data-view="more"] .packing-section-checked{border-top:5px solid #ff7955;background:linear-gradient(165deg,#fff 0%,#fff9f6 100%)}
+body[data-view="more"] .packing-section-carry{border-top:5px solid #4b9ed0;background:linear-gradient(165deg,#fff 0%,#f6fbff 100%)}
+body[data-view="more"] .packing-section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+body[data-view="more"] .packing-title-row{display:flex;align-items:center;gap:10px}
+body[data-view="more"] .packing-title-row h2{font-size:23px;color:#13394f}
+body[data-view="more"] .packing-section-icon{font-size:29px}
+body[data-view="more"] .packing-section-head p{margin:5px 0 0;color:#778791;font-size:12px}
+body[data-view="more"] .packing-summary{display:flex;align-items:baseline;gap:3px;color:#6b7c86;white-space:nowrap}
+body[data-view="more"] .packing-summary strong{font-size:24px;color:#123d57}
+body[data-view="more"] .packing-summary span{font-size:11px}
+body[data-view="more"] .packing-progress{height:8px;background:#edf1f2;border-radius:99px;overflow:hidden;margin:15px 0 16px}
+body[data-view="more"] .packing-progress>div{height:100%;border-radius:inherit;transition:width .2s ease}
+body[data-view="more"] .packing-section-checked .packing-progress>div{background:linear-gradient(90deg,#ff6b43,#ffa16c)}
+body[data-view="more"] .packing-section-carry .packing-progress>div{background:linear-gradient(90deg,#418fc7,#63b5dc)}
+body[data-view="more"] .packing-groups{display:grid;gap:11px}
+body[data-view="more"] .packing-group{border:1px solid #e2e7e9;border-radius:16px;padding:13px;background:rgba(255,255,255,.9);box-shadow:0 3px 12px rgba(18,47,63,.04)}
+body[data-view="more"] .packing-group-common{border-left:4px solid #46a98d}
+body[data-view="more"] .packing-group-parents{border-left:4px solid #6d83c5}
+body[data-view="more"] .packing-group-hajin{border-left:4px solid #f39a65}
+body[data-view="more"] .packing-group-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;color:#203f50}
+body[data-view="more"] .packing-group-head>div{display:flex;align-items:center;gap:7px}
+body[data-view="more"] .packing-group-icon{font-size:17px}
+body[data-view="more"] .packing-count{font-size:10px;font-weight:850;padding:4px 7px;border-radius:99px;background:#f0f4f5;color:#60747f}
+body[data-view="more"] .packing-items{display:grid;gap:6px}
+body[data-view="more"] .packing-item{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;border:0!important;border-radius:10px!important;background:#f8faf9!important;padding:8px 9px!important;box-shadow:none!important;color:#334b57!important;cursor:pointer}
+body[data-view="more"] .packing-item:hover{background:#f1f6f4!important}
+body[data-view="more"] .packing-item input{width:auto;accent-color:#ff6b43;transform:scale(1.08)}
+body[data-view="more"] .packing-item:has(input:checked) span{text-decoration:line-through;color:#98a3a8}
+body[data-view="more"] .packing-delete{width:22px;height:22px;border:0;background:transparent;color:#a8b0b4;border-radius:50%;font-size:18px;line-height:20px;padding:0}
+body[data-view="more"] .packing-delete:hover{background:#feece8;color:#b9543e}
+body[data-view="more"] .packing-add{margin-top:9px;width:100%;border-style:dashed;color:#55717f;background:#fff}
+body[data-view="more"] .packing-empty{font-size:11px;color:#9aa5aa;padding:7px 3px}
+body[data-view="more"] .packing-support{margin-top:16px}
+body[data-view="more"] .packing-support .card{border-radius:20px}
+body[data-view="more"] .emergency-card{border-top:4px solid #ee6a54}
+body[data-view="more"] .packing-tip-card{border-top:4px solid #4da0d2}
+body[data-view="more"] .packing-tip-card .item{border:0;background:#f7fafb}
+
+@media(max-width:900px){
+  body[data-view="more"] .packing-layout{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  body[data-view="more"] .packing-page-intro{padding:16px;border-radius:18px;align-items:flex-end}
+  body[data-view="more"] .packing-page-intro h2{font-size:20px}
+  body[data-view="more"] .packing-page-intro p{font-size:11px;line-height:1.45}
+  body[data-view="more"] .packing-total{min-width:88px;padding:10px 11px}
+  body[data-view="more"] .packing-total strong{font-size:22px}
+  body[data-view="more"] .packing-section{padding:15px;border-radius:18px}
+  body[data-view="more"] .packing-title-row h2{font-size:20px}
+  body[data-view="more"] .packing-section-icon{font-size:24px}
+  body[data-view="more"] .packing-support{grid-template-columns:1fr}
+}
