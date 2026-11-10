@@ -155,6 +155,19 @@ const DEFAULT_STATE = {
   _meta: { updatedAt: 0, tripDataVersion: 0 }
 };
 
+const PACKING_DATA_VERSION = 20261110;
+const LEGACY_PACKING_MAP = {
+  "여권":"carry-common-passport",
+  "여행자보험":"carry-common-insurance",
+  "아기 분유":"carry-hajin-formula",
+  "이유식":"carry-hajin-solids",
+  "기저귀":"carry-hajin-diaper",
+  "물티슈":"carry-hajin-wipes",
+  "상비약":"carry-common-medicine",
+  "충전기":"carry-common-charger",
+  "유모차/아기띠":"carry-hajin-carrier"
+};
+
 let state = loadState();
 migratePackingData(state);
 persistLocal();
@@ -236,19 +249,6 @@ function migrateCurrentItinerary(target){
   target._meta.itineraryVersion=20261020;
   return changed;
 }
-
-const PACKING_DATA_VERSION = 20261110;
-const LEGACY_PACKING_MAP = {
-  "여권":"carry-common-passport",
-  "여행자보험":"carry-common-insurance",
-  "아기 분유":"carry-hajin-formula",
-  "이유식":"carry-hajin-solids",
-  "기저귀":"carry-hajin-diaper",
-  "물티슈":"carry-hajin-wipes",
-  "상비약":"carry-common-medicine",
-  "충전기":"carry-common-charger",
-  "유모차/아기띠":"carry-hajin-carrier"
-};
 
 function migratePackingData(target){
   target._meta = target._meta || {};
