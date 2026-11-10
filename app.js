@@ -200,6 +200,12 @@ function save(){
   schedulePrivateWrite();
   schedulePublicWrite();
 }
+function savePrivateOnly(){
+  state._meta = state._meta || {};
+  state._meta.updatedAt = Date.now();
+  persistLocal();
+  schedulePrivateWrite();
+}
 
 
 const LATEST_TRIP_DATA_VERSION = 20261109;
@@ -596,11 +602,27 @@ async function connectAdminUser(user){
       {includeMetadataChanges:true},
       snap2=>{
         if(!snap2.exists() || snap2.metadata.hasPendingWrites) return;
-        mergePrivateState(snap2.data().state);
+        const remoteDoc=snap2.data();
+        const remoteUpdatedAt=Number(remoteDoc.updatedAtClient||0);
+        const localUpdatedAt=Number(state._meta?.updatedAt||0);
+
+        // Firestore sends a server acknowledgement after our own write.
+        // Re-rendering for that acknowledgement resets the page scroll position.
+        // Only re-render when a genuinely newer update arrived from another device.
+        if(remoteUpdatedAt && remoteUpdatedAt <= localUpdatedAt){
+          cloud.status="synced";
+          cloud.lastSyncedAt=Date.now();
+          updateCloudHeader();
+          return;
+        }
+
+        const y=window.scrollY;
+        mergePrivateState(remoteDoc.state);
         cloud.status="synced";
         cloud.lastSyncedAt=Date.now();
         updateCloudHeader();
         render();
+        requestAnimationFrame(()=>window.scrollTo({top:y,left:0,behavior:"auto"}));
       },
       err=>{
         console.error("Private snapshot failed",err);
@@ -1557,6 +1579,9 @@ function openBudgetModal(){
   };
 }
 
+function packingInputId(id){
+  return `packing-check-${String(id).replace(/[^a-zA-Z0-9_-]/g,"-")}`;
+}
 function packingGroupMeta(group){
   return group==="common" ? ["공통","👨‍👩‍👦"] : group==="parents" ? ["부모","👫"] : ["하진","👶"];
 }
@@ -1573,17 +1598,17 @@ function packingGroupHTML(section,group){
   const [label,icon]=packingGroupMeta(group);
   const items=state.packing?.groups?.[section]?.[group]||[];
   const done=items.filter(item=>state.packing.checked?.[item.id]).length;
-  return `<div class="packing-group packing-group-${group}">
+  return `<div class="packing-group packing-group-${group}" data-packing-group="${section}|${group}">
     <div class="packing-group-head">
       <div><span class="packing-group-icon">${icon}</span><strong>${label}</strong></div>
-      <span class="packing-count">${done}/${items.length}</span>
+      <span class="packing-count" data-packing-count="${section}|${group}">${done}/${items.length}</span>
     </div>
     <div class="packing-items">
-      ${items.length?items.map(item=>`<label class="packing-item">
-        <input type="checkbox" data-packing-check="${attr(item.id)}" ${state.packing.checked?.[item.id]?"checked":""}>
-        <span>${escapeHtml(item.label)}</span>
+      ${items.length?items.map(item=>{const inputId=packingInputId(item.id);return `<div class="packing-item" data-packing-item="${attr(item.id)}">
+        <input id="${attr(inputId)}" type="checkbox" data-packing-check="${attr(item.id)}" data-packing-path="${section}|${group}" ${state.packing.checked?.[item.id]?"checked":""}>
+        <label class="packing-item-label" for="${attr(inputId)}">${escapeHtml(item.label)}</label>
         <button type="button" class="packing-delete" data-packing-delete="${section}|${group}|${attr(item.id)}" aria-label="삭제">×</button>
-      </label>`).join(""):`<div class="packing-empty">아직 등록된 준비물이 없습니다.</div>`}
+      </div>`}).join(""):`<div class="packing-empty">아직 등록된 준비물이 없습니다.</div>`}
     </div>
     <button class="btn small packing-add" data-packing-add="${section}|${group}">+ ${label} 준비물 추가</button>
   </div>`;
@@ -1592,15 +1617,15 @@ function packingSectionHTML(section){
   const [title,icon,desc]=packingSectionMeta(section);
   const progress=packingProgress(section);
   const pct=progress.total?Math.round(progress.done/progress.total*100):0;
-  return `<section class="card packing-section packing-section-${section}">
+  return `<section class="card packing-section packing-section-${section}" data-packing-section="${section}">
     <div class="packing-section-head">
       <div>
         <div class="packing-title-row"><span class="packing-section-icon">${icon}</span><h2>${title}</h2></div>
         <p>${desc}</p>
       </div>
-      <div class="packing-summary"><strong>${progress.done}</strong><span>/ ${progress.total}</span></div>
+      <div class="packing-summary" data-packing-section-count="${section}"><strong>${progress.done}</strong><span>/ ${progress.total}</span></div>
     </div>
-    <div class="packing-progress"><div style="width:${pct}%"></div></div>
+    <div class="packing-progress"><div data-packing-section-progress="${section}" style="width:${pct}%"></div></div>
     <div class="packing-groups">
       ${packingGroupHTML(section,"common")}
       ${packingGroupHTML(section,"parents")}
@@ -1623,6 +1648,24 @@ function openPackingAddModal(section,group){
   };
 }
 
+function updatePackingProgressUI(section,group){
+  const items=state.packing?.groups?.[section]?.[group]||[];
+  const groupDone=items.filter(item=>state.packing.checked?.[item.id]).length;
+  const groupCount=document.querySelector(`[data-packing-count="${section}|${group}"]`);
+  if(groupCount) groupCount.textContent=`${groupDone}/${items.length}`;
+
+  const sectionProgress=packingProgress(section);
+  const sectionCount=document.querySelector(`[data-packing-section-count="${section}"]`);
+  if(sectionCount) sectionCount.innerHTML=`<strong>${sectionProgress.done}</strong><span>/ ${sectionProgress.total}</span>`;
+  const sectionBar=document.querySelector(`[data-packing-section-progress="${section}"]`);
+  if(sectionBar) sectionBar.style.width=`${sectionProgress.total?Math.round(sectionProgress.done/sectionProgress.total*100):0}%`;
+
+  const checked=packingProgress("checked");
+  const carry=packingProgress("carry");
+  const total=document.querySelector("[data-packing-total]");
+  if(total) total.innerHTML=`<strong>${checked.done+carry.done}</strong><span>/ ${checked.total+carry.total} 완료</span>`;
+}
+
 function renderMore(){
   setHeader("준비 · 생활",canEditShared()?"짐 종류와 가족별로 나눠 준비물을 관리합니다.":"개인 준비 정보는 관리자에게만 표시됩니다.");
   if(!canEditShared()){ showAdminGate("🧳 준비 · 관리자 전용"); return; }
@@ -1630,7 +1673,7 @@ function renderMore(){
   document.getElementById("view").innerHTML=`
     <div class="packing-page-intro">
       <div><span class="badge good">36박 37일</span><h2>여행 준비 체크리스트</h2><p>수화물과 기내용을 나누고, 공통·부모·하진 준비물을 각각 체크하세요.</p></div>
-      <div class="packing-total">${(()=>{const a=packingProgress("checked"),b=packingProgress("carry");return `<strong>${a.done+b.done}</strong><span>/ ${a.total+b.total} 완료</span>`})()}</div>
+      <div class="packing-total" data-packing-total>${(()=>{const a=packingProgress("checked"),b=packingProgress("carry");return `<strong>${a.done+b.done}</strong><span>/ ${a.total+b.total} 완료</span>`})()}</div>
     </div>
     <div class="packing-layout">
       ${packingSectionHTML("checked")}
@@ -1654,9 +1697,14 @@ function renderMore(){
       </div>
     </div>
   `;
-  document.querySelectorAll("[data-packing-check]").forEach(c=>c.onchange=()=>{
-    state.packing.checked[c.dataset.packingCheck]=c.checked;
-    save();renderMore();
+  document.querySelectorAll("[data-packing-check]").forEach(c=>c.onchange=e=>{
+    e.stopPropagation();
+    const id=c.dataset.packingCheck;
+    const [section,group]=c.dataset.packingPath.split("|");
+    if(c.checked) state.packing.checked[id]=true;
+    else delete state.packing.checked[id];
+    savePrivateOnly();
+    updatePackingProgressUI(section,group);
   });
   document.querySelectorAll("[data-packing-add]").forEach(b=>b.onclick=()=>{
     const [section,group]=b.dataset.packingAdd.split("|");
