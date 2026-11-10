@@ -155,7 +155,7 @@ const DEFAULT_STATE = {
   _meta: { updatedAt: 0, tripDataVersion: 0 }
 };
 
-const PACKING_DATA_VERSION = 20261110;
+const PACKING_DATA_VERSION = 2026111002;
 const LEGACY_PACKING_MAP = {
   "여권":"carry-common-passport",
   "여행자보험":"carry-common-insurance",
@@ -274,9 +274,20 @@ function migratePackingData(target){
     if(!id){
       id=`legacy-packing-${index}`;
       const exists=target.packing.groups.checked.common.some(x=>x.id===id || x.label===label);
-      if(!exists) target.packing.groups.checked.common.push({id,label});
+      if(!exists) target.packing.groups.checked.common.push({id,label,qty:1});
     }
     if(legacyChecked[index]) target.packing.checked[id]=true;
+  });
+
+  // v19: every packing item carries an editable quantity.
+  ["checked","carry"].forEach(section=>{
+    ["common","parents","hajin"].forEach(group=>{
+      const items=target.packing?.groups?.[section]?.[group] || [];
+      items.forEach(item=>{
+        const qty=Number.parseInt(item.qty,10);
+        item.qty=Number.isFinite(qty) ? Math.min(999,Math.max(1,qty)) : 1;
+      });
+    });
   });
 
   target._meta.packingVersion=PACKING_DATA_VERSION;
@@ -1598,6 +1609,10 @@ function openBudgetModal(){
 function packingInputId(id){
   return `packing-check-${String(id).replace(/[^a-zA-Z0-9_-]/g,"-")}`;
 }
+function normalizePackingQty(value){
+  const qty=Number.parseInt(value,10);
+  return Number.isFinite(qty) ? Math.min(999,Math.max(1,qty)) : 1;
+}
 function packingGroupMeta(group){
   return group==="common" ? ["공통","👨‍👩‍👦"] : group==="parents" ? ["부모","👫"] : ["하진","👶"];
 }
@@ -1620,11 +1635,13 @@ function packingGroupHTML(section,group){
       <span class="packing-count" data-packing-count="${section}|${group}">${done}/${items.length}</span>
     </div>
     <div class="packing-items">
-      ${items.length?items.map(item=>{const isChecked=!!state.packing.checked?.[item.id];return `<div class="packing-item ${isChecked?"is-checked":""}" data-packing-item="${attr(item.id)}">
+      ${items.length?items.map(item=>{const isChecked=!!state.packing.checked?.[item.id];const qty=normalizePackingQty(item.qty);return `<div class="packing-item ${isChecked?"is-checked":""}" data-packing-item="${attr(item.id)}">
         <button type="button" class="packing-check-toggle ${isChecked?"is-checked":""}" data-packing-check="${attr(item.id)}" data-packing-path="${section}|${group}" role="checkbox" aria-checked="${isChecked?"true":"false"}" aria-label="${escapeHtml(item.label)} 체크">
           <span aria-hidden="true">✓</span>
         </button>
         <button type="button" class="packing-item-label" data-packing-label="${attr(item.id)}" data-packing-path="${section}|${group}">${escapeHtml(item.label)}</button>
+        <label class="packing-qty-wrap" title="수량"><span>수량</span><input type="number" min="1" max="999" step="1" inputmode="numeric" class="packing-qty-input" value="${qty}" data-packing-qty="${section}|${group}|${attr(item.id)}" aria-label="${escapeHtml(item.label)} 수량"></label>
+        <button type="button" class="packing-edit" data-packing-edit="${section}|${group}|${attr(item.id)}" aria-label="${escapeHtml(item.label)} 수정">수정</button>
         <button type="button" class="packing-delete" data-packing-delete="${section}|${group}|${attr(item.id)}" aria-label="삭제">×</button>
       </div>`}).join(""):`<div class="packing-empty">아직 등록된 준비물이 없습니다.</div>`}
     </div>
@@ -1655,15 +1672,44 @@ function openPackingAddModal(section,group){
   const [sectionLabel]=packingSectionMeta(section);
   const [groupLabel]=packingGroupMeta(group);
   showModal(`<div class="modal-head"><div><div class="eyebrow">${sectionLabel} · ${groupLabel}</div><h2>준비물 추가</h2></div><button class="btn small" data-close-modal>닫기</button></div>
-    <label class="field">항목<input id="newPackingItem" placeholder="예: 모자"></label>
+    <div class="packing-modal-grid">
+      <label class="field">항목<input id="newPackingItem" placeholder="예: 모자" autocomplete="off"></label>
+      <label class="field">수량<input id="newPackingQty" type="number" min="1" max="999" step="1" inputmode="numeric" value="1"></label>
+    </div>
     <div class="modal-footer"><button class="btn primary" id="savePackingItem">추가</button></div>`);
-  document.getElementById("savePackingItem").onclick=()=>{
+  const saveNewPackingItem=()=>{
     const label=document.getElementById("newPackingItem").value.trim();
     if(!label)return;
+    const qty=normalizePackingQty(document.getElementById("newPackingQty").value);
     const id=`packing-${section}-${group}-${Date.now()}`;
-    state.packing.groups[section][group].push({id,label});
-    save();closeModal({restore:false});rerenderPreservingScroll(renderMore);
+    state.packing.groups[section][group].push({id,label,qty});
+    savePrivateOnly();closeModal({restore:false});rerenderPreservingScroll(renderMore);
   };
+  document.getElementById("savePackingItem").onclick=saveNewPackingItem;
+  document.getElementById("newPackingItem").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();saveNewPackingItem();}};
+}
+
+function openPackingEditModal(section,group,id){
+  const items=state.packing?.groups?.[section]?.[group]||[];
+  const item=items.find(x=>x.id===id);
+  if(!item)return;
+  const [sectionLabel]=packingSectionMeta(section);
+  const [groupLabel]=packingGroupMeta(group);
+  showModal(`<div class="modal-head"><div><div class="eyebrow">${sectionLabel} · ${groupLabel}</div><h2>준비물 수정</h2></div><button class="btn small" data-close-modal>닫기</button></div>
+    <div class="packing-modal-grid">
+      <label class="field">항목<input id="editPackingItem" value="${attr(item.label)}" autocomplete="off"></label>
+      <label class="field">수량<input id="editPackingQty" type="number" min="1" max="999" step="1" inputmode="numeric" value="${normalizePackingQty(item.qty)}"></label>
+    </div>
+    <div class="modal-footer"><button class="btn primary" id="savePackingEdit">저장</button></div>`);
+  const savePackingEdit=()=>{
+    const label=document.getElementById("editPackingItem").value.trim();
+    if(!label)return;
+    item.label=label;
+    item.qty=normalizePackingQty(document.getElementById("editPackingQty").value);
+    savePrivateOnly();closeModal({restore:false});rerenderPreservingScroll(renderMore);
+  };
+  document.getElementById("savePackingEdit").onclick=savePackingEdit;
+  document.getElementById("editPackingItem").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();savePackingEdit();}};
 }
 
 function updatePackingProgressUI(section,group){
@@ -1747,12 +1793,29 @@ function renderMore(){
     const [section,group]=b.dataset.packingAdd.split("|");
     openPackingAddModal(section,group);
   });
+  document.querySelectorAll("[data-packing-qty]").forEach(input=>{
+    input.onclick=e=>e.stopPropagation();
+    input.onchange=e=>{
+      e.preventDefault();e.stopPropagation();
+      const [section,group,id]=input.dataset.packingQty.split("|");
+      const item=(state.packing?.groups?.[section]?.[group]||[]).find(x=>x.id===id);
+      if(!item)return;
+      item.qty=normalizePackingQty(input.value);
+      input.value=String(item.qty);
+      savePrivateOnly();
+    };
+  });
+  document.querySelectorAll("[data-packing-edit]").forEach(b=>b.onclick=e=>{
+    e.preventDefault();e.stopPropagation();
+    const [section,group,id]=b.dataset.packingEdit.split("|");
+    openPackingEditModal(section,group,id);
+  });
   document.querySelectorAll("[data-packing-delete]").forEach(b=>b.onclick=e=>{
     e.preventDefault();e.stopPropagation();
     const [section,group,id]=b.dataset.packingDelete.split("|");
     state.packing.groups[section][group]=state.packing.groups[section][group].filter(item=>item.id!==id);
     delete state.packing.checked[id];
-    save();rerenderPreservingScroll(renderMore);
+    savePrivateOnly();rerenderPreservingScroll(renderMore);
   });
 }
 

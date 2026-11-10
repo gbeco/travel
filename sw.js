@@ -1,4 +1,4 @@
-const CACHE="danang-hoian-planner-v18";
+const CACHE="danang-hoian-planner-v19";
 const STATIC_ASSETS=[
   "./manifest.json","./firebase-config.js",
   "./assets/hero-vietnam.svg","./assets/stay-resort.svg",
