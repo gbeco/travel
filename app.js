@@ -1008,7 +1008,6 @@ function renderHome(){
   const d=nearestTripDate();
   const stay=currentStay(d) || t.stays.slice().sort((a,b)=>a.in.localeCompare(b.in))[0] || null;
   const nextStay=nextStayAfter(d);
-  const p=state.dayPlans[d] || {a:"",b:"",c:"",selected:"A"};
   const progress=tripProgressInfo();
   const w=weatherFor(d);
   const city=cityForDate(d);
@@ -1081,9 +1080,6 @@ function renderHome(){
               ${note?`<div class="today-list-row"><span class="check-box"></span><span class="today-emoji">📝</span><div>${escapeHtml(note)}</div></div>`:''}
               ${!locked.length&&!selected&&!note?`<div class="today-empty">오늘 등록된 일정이 없습니다.</div>`:''}
             </div>
-            <div class="plan-switch-row compact">
-              ${['A','B','C'].map(label=>{const txt=p[label.toLowerCase()]||'미정';return `<button class="plan-mini ${p.selected===label?'active':''}" ${canEditShared()?`data-select-plan="${d}|${label}"`:'disabled'}><b>${label}</b><span>${escapeHtml(txt)}</span></button>`}).join('')}
-            </div>
           </article>
 
           <article class="portal-panel weather-visual" style="background-image:linear-gradient(90deg,rgba(255,255,255,.97) 0%,rgba(255,255,255,.78) 45%,rgba(255,255,255,.12) 100%),url('./assets/weather-danang.svg')">
@@ -1105,7 +1101,6 @@ function renderHome(){
 
   document.querySelectorAll('[data-home-view]').forEach(btn=>btn.onclick=()=>{activeView=btn.dataset.homeView;render({preserveScroll:false});window.scrollTo({top:0,behavior:'smooth'});});
   bindDayEditButtons();
-  if(canEditShared()) document.querySelectorAll('[data-select-plan]').forEach(btn=>btn.onclick=()=>{const [date,sel]=btn.dataset.selectPlan.split('|');state.dayPlans[date].selected=sel;save();rerenderPreservingScroll(renderHome);});
   const weatherTop=document.getElementById('homeWeatherBtnTop'); if(weatherTop) weatherTop.onclick=refreshWeather;
   const weatherBtn=document.getElementById('homeWeatherBtn'); if(weatherBtn) weatherBtn.onclick=refreshWeather;
   const weatherQuick=document.getElementById('homeWeatherQuick'); if(weatherQuick) weatherQuick.onclick=refreshWeather;
